@@ -1,549 +1,463 @@
-// NeptuneOS Simulation Logic
+// NeptuneOS Geospatial Subsea Simulation (WGS84)
 
-// --- State Machine ---
-const STATES = {
-    NORMAL: 'NORMAL',
-    UNCERTAINTY: 'UNCERTAINTY',
-    DISPATCH: 'DISPATCH',
-    UPDATE: 'UPDATE'
-};
-let currentState = STATES.NORMAL;
-
-// --- DOM Elements ---
-const els = {
-    btnInvestigate: document.getElementById('btn-investigate'),
-    valState: document.getElementById('val-state'),
-    valIntegrity: document.getElementById('val-integrity'),
-    barIntegrity: document.getElementById('bar-integrity'),
-    valConfidence: document.getElementById('val-confidence'),
-    barConfidence: document.getElementById('bar-confidence'),
-    valKp: document.getElementById('val-kp'),
-    eventLog: document.getElementById('event-log'),
-    alerts: document.getElementById('alerts-container'),
-    panels: document.querySelectorAll('.panel'),
-    topBar: document.querySelector('.top-bar'),
-    sysStatus: document.getElementById('sys-status')
-};
-
-// --- Logger ---
-function addLog(msg, type = 'info') {
-    const entry = document.createElement('div');
-    entry.className = 'log-entry';
-
-    // Add color marker based on type
-    let colorHex = 'var(--color-nominal)';
-    if (type === 'warning') colorHex = 'var(--color-warning)';
-    if (type === 'critical') colorHex = 'var(--color-critical)';
-    entry.style.borderLeftColor = colorHex;
-
-    const time = new Date().toISOString().split('T')[1].slice(0, 11) + 'Z';
-    entry.innerHTML = `
-        <div class="log-timestamp">[${time}] sys.${type.toUpperCase()}</div>
-        <div class="log-message" style="color: ${colorHex}">${msg}</div>
-    `;
-    els.eventLog.appendChild(entry);
-    els.eventLog.scrollTop = els.eventLog.scrollHeight;
-}
-
-// --- FSM Transitions ---
-function transition(newState) {
-    if (currentState === newState) return;
-    currentState = newState;
-    els.valState.innerText = currentState;
-
-    // Reset UI state classes
-    els.panels.forEach(p => { p.classList.remove('state-warning', 'state-critical'); });
-    els.topBar.classList.remove('state-warning', 'state-critical');
-
-    // Reset styling
-    els.valState.className = 'value';
-
-    switch (newState) {
-        case STATES.NORMAL:
-            // UI
-            els.valState.classList.add('nominal-text');
-            els.valIntegrity.innerText = '100%';
-            els.valIntegrity.className = 'metric-value nominal-text';
-            els.barIntegrity.style.width = '100%';
-            els.barIntegrity.className = 'progress-fill nominal-bg';
-
-            els.valConfidence.innerText = 'LOW';
-            els.valConfidence.className = 'metric-value nominal-text';
-            els.barConfidence.style.width = '20%';
-            els.barConfidence.className = 'progress-fill nominal-bg';
-
-            els.valKp.innerText = '--';
-            els.valKp.className = 'metric-value nominal-text';
-
-            // Buttons
-            els.btnInvestigate.disabled = false;
-            els.btnInvestigate.onclick = () => transition(STATES.UNCERTAINTY);
-            els.btnInvestigate.innerHTML = '<span class="btn-icon">🔍</span> INVESTIGATE';
-
-            // 3D
-            gsap.to(materials.pipeline.color, { r: 0.0, g: 1.0, b: 0.5, duration: 1 });
-            gsap.to(materials.risk.uniforms.opacity, { value: 0.0, duration: 1 });
-            gsap.to(auv.position, { x: 30, z: -10, duration: 5, ease: 'power2.inOut' });
-            break;
-
-        case STATES.UNCERTAINTY:
-            // UI
-            els.valState.classList.add('warning-text');
-            els.panels.forEach(p => p.classList.add('state-warning'));
-            els.topBar.classList.add('state-warning');
-
-            els.valIntegrity.innerText = '82%';
-            els.valIntegrity.className = 'metric-value warning-text';
-            els.barIntegrity.style.width = '82%';
-            els.barIntegrity.className = 'progress-fill warning-bg';
-
-            els.valConfidence.innerText = 'MEDIUM';
-            els.valConfidence.className = 'metric-value warning-text';
-            els.barConfidence.style.width = '55%';
-            els.barConfidence.className = 'progress-fill warning-bg';
-
-            els.valKp.innerText = 'CALCULATING...';
-            els.valKp.className = 'metric-value warning-text animated-ellipsis';
-
-            // Buttons
-            els.btnInvestigate.disabled = false;
-            els.btnInvestigate.className = 'btn critical-btn';
-            els.btnInvestigate.onclick = () => transition(STATES.DISPATCH);
-            els.btnInvestigate.innerHTML = '<span class="btn-icon">🎯</span> RUN DETECTION';
-
-            // 3D
-            gsap.to(materials.pipeline.color, { r: 1.0, g: 0.8, b: 0.0, duration: 2 });
-            gsap.to(materials.risk.uniforms.opacity, { value: 0.5, duration: 2 });
-
-            addLog('Acoustic anomaly detected on sector alpha.', 'warning');
-            addLog('Uncertainty build-up. Risk zone established.', 'warning');
-            break;
-
-        case STATES.DISPATCH:
-            // UI
-            els.valState.classList.add('critical-text');
-            els.panels.forEach(p => p.classList.add('state-critical'));
-            els.topBar.classList.add('state-critical');
-
-            els.valConfidence.innerText = 'HIGH';
-            els.valConfidence.className = 'metric-value critical-text';
-            els.barConfidence.style.width = '95%';
-            els.barConfidence.className = 'progress-fill critical-bg';
-
-            els.valKp.innerText = 'KP 32-36';
-            els.valKp.className = 'metric-value critical-text';
-
-            // Buttons
-            els.btnInvestigate.disabled = false;
-            els.btnInvestigate.className = 'btn nominal-btn';
-            els.btnInvestigate.onclick = () => transition(STATES.UPDATE);
-            els.btnInvestigate.innerHTML = '<span class="btn-icon">🔄</span> INGEST OBSERVATION';
-
-            // 3D
-            addLog('Certainty collapse achieved: Fault isolated.', 'critical');
-            addLog('Dispatching autonomous underwater vehicle (AUV)...', 'critical');
-
-            // AUV moves from base to risk zone
-            gsap.to(auv.position, {
-                x: config.anomalyPos.x + 2,
-                z: config.anomalyPos.z + 2,
-                duration: 4,
-                ease: 'power2.inOut',
-                onComplete: () => {
-                    addLog('AUV on site. Commencing close-range structural scan.', 'info');
-                }
-            });
-
-            // Camera zooms in slightly
-            gsap.to(camera.position, {
-                x: 15, y: 10, z: 15, duration: 4, ease: 'power2.inOut'
-            });
-            break;
-
-        case STATES.UPDATE:
-            // UI
-            els.valState.classList.add('nominal-text'); // Return to nominal
-            els.valIntegrity.innerText = '94%'; // Slightly degraded but known
-            els.barIntegrity.style.width = '94%';
-
-            els.valConfidence.innerText = 'RESOLVED';
-            els.valConfidence.className = 'metric-value nominal-text';
-
-            els.valKp.innerText = 'KP 34.46';
-            els.valKp.className = 'metric-value nominal-text';
-
-            // Buttons
-            els.btnInvestigate.disabled = true;
-
-            // 3D
-            addLog('High-res scan complete. Observation ingested.', 'info');
-            addLog('Model Updated. Risk zone parameters collapsed.', 'nominal');
-
-            gsap.to(materials.pipeline.color, { r: 0.0, g: 1.0, b: 0.5, duration: 1.5 });
-            gsap.to(riskZone.scale, { x: 0.1, y: 0.1, z: 0.1, duration: 1.5, ease: 'back.in(1.7)' });
-            gsap.to(materials.risk.uniforms.opacity, {
-                value: 0.0, duration: 1.5, onComplete: () => {
-                    // Reset scale for next time
-                    riskZone.scale.set(1, 1, 1);
-                }
-            });
-
-            // AUV returns
-            gsap.to(auv.position, {
-                x: 30, z: -10, duration: 5, ease: 'power1.inOut', delay: 1.5
-            });
-
-            // Camera returns
-            gsap.to(camera.position, {
-                x: defaultCameraPos.x, y: defaultCameraPos.y, z: defaultCameraPos.z,
-                duration: 5, ease: 'power2.inOut', delay: 1.5
-            });
-
-            // Go back to NORMAL after a few seconds
-            setTimeout(() => {
-                transition(STATES.NORMAL);
-                addLog('System stabilizing. Resuming autonomous monitoring.', 'info');
-            }, 8000);
-
-            break;
-    }
-}
-
-// Button Listeners handled dynamically in FSM now
-
-// --- Three.js Setup ---
-const config = {
-    anomalyPos: { x: -5, y: 0, z: 0 },
-};
+// --------------------------------------------------------
+// 1. SCENE SETUP & THREE.JS CONFIG
+// --------------------------------------------------------
+const R_EARTH = 6371; // km
+const MAX_LENGTH = 1900; // km
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x05080e, 0.015);
+scene.background = new THREE.Color(0x020813);
+scene.fog = new THREE.FogExp2(0x020813, 0.0005); // Global deep fog
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-// Fixed Isometric/Elevated camera
-const defaultCameraPos = new THREE.Vector3(25, 20, 25);
-camera.position.copy(defaultCameraPos);
-camera.lookAt(0, 0, 0);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+// Logarithmic depth buffer is critical for planetary scale
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 50000);
+const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 document.getElementById('canvas-container').appendChild(renderer.domElement);
 
 // Lights
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+const ambientLight = new THREE.AmbientLight(0x404040, 0.6); // Soft white light
 scene.add(ambientLight);
 
-const dirLight = new THREE.DirectionalLight(0x00f0ff, 0.8);
-dirLight.position.set(20, 40, 20);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(R_EARTH * 1.5, R_EARTH * 1.5, R_EARTH * 1.5);
 scene.add(dirLight);
 
-const dirLight2 = new THREE.DirectionalLight(0xff3b3b, 0.3);
-dirLight2.position.set(-20, 20, -20);
-scene.add(dirLight2);
+// --------------------------------------------------------
+// 2. WGS84 & BATHYMETRY MATH UTILS
+// --------------------------------------------------------
+const START_LAT = 22.8390;
+const START_LON = 69.7210; // Mundra
+const END_LAT = 25.1288;
+const END_LON = 56.3265;   // Fujairah
 
-// Simple pseudo-random noise function for terrain
-function snoise(x, z) {
-    return Math.sin(x * 0.1) * Math.cos(z * 0.1) * 2.0 + Math.sin(x * 0.05 + z * 0.05) * 1.5;
+function latLonToVector3(lat, lon, depthKm = 0) {
+    const phi = (90 - lat) * (Math.PI / 180);
+    const theta = (lon + 180) * (Math.PI / 180);
+    const r = R_EARTH - depthKm;
+
+    const x = -(r * Math.sin(phi) * Math.cos(theta));
+    const z = (r * Math.sin(phi) * Math.sin(theta));
+    const y = (r * Math.cos(phi));
+
+    return new THREE.Vector3(x, y, z);
 }
 
-// Materials Storage
-const materials = {};
-
-// 1. Terrain Engine (Realistic Sandbox)
-const terrainGeo = new THREE.PlaneGeometry(120, 120, 64, 64);
-// Apply smooth noise
-const posArr = terrainGeo.attributes.position.array;
-for (let i = 0; i < posArr.length; i += 3) {
-    const x = posArr[i];
-    const y = posArr[i + 1]; // PlaneGeometry creates on XY plane, then we rotate
-    posArr[i + 2] = snoise(x, y); // Z becomes Y after rotation
+// Lerp between two coordinates based on parameter t (0 to 1)
+function interpolateCoord(t) {
+    return {
+        lat: START_LAT + (END_LAT - START_LAT) * t,
+        lon: START_LON + (END_LON - START_LON) * t
+    };
 }
-terrainGeo.computeVertexNormals();
 
-const terrainMat = new THREE.MeshStandardMaterial({
-    color: 0x2a3628, // Muted sandy/silt green-brown
+// Approximate bathymetry depth profile in kilometers based on KP
+function getDepthKmAtKP(kp) {
+    // Smooth transitions between sectors using cosine interpolation
+    let targetDepthM = 0;
+
+    if (kp <= 350) {
+        // India coastal shelf (20-60m)
+        targetDepthM = 20 + (kp / 350) * 40;
+    } else if (kp <= 1100) {
+        // Continental slope to Deep Basin (60 -> 4200)
+        let localT = (kp - 350) / 750;
+        targetDepthM = 60 + 4140 * Math.pow(localT, 1.5);
+    } else if (kp <= 1550) {
+        // Oman slope (4200 -> 800)
+        let localT = (kp - 1100) / 450;
+        targetDepthM = 4200 - 3400 * Math.sqrt(localT);
+    } else {
+        // UAE coast (800 -> 50)
+        let localT = (kp - 1550) / 350;
+        targetDepthM = 800 - 750 * Math.pow(localT, 0.8);
+    }
+
+    // Add slight undulations
+    let undulation = Math.sin(kp * 0.1) * 15 + Math.cos(kp * 0.03) * 30;
+    return (targetDepthM + undulation) / 1000.0; // Return in km
+}
+
+// Master curve points calculation
+const CURVE_RESOLUTION = 200;
+const masterPoints = [];
+for (let i = 0; i <= CURVE_RESOLUTION; i++) {
+    const t = i / CURVE_RESOLUTION;
+    const kp = t * MAX_LENGTH;
+    const coord = interpolateCoord(t);
+    const depthKm = getDepthKmAtKP(kp);
+
+    const pos = latLonToVector3(coord.lat, coord.lon, depthKm);
+    masterPoints.push(pos);
+}
+const masterCurve = new THREE.CatmullRomCurve3(masterPoints);
+
+// Generate Frenet Frames for offsetting (to place parallel lines)
+const frames = masterCurve.computeFrenetFrames(CURVE_RESOLUTION, false);
+
+// Utility to generate a parallel offset curve
+function generateOffsetCurve(offsetX, offsetY) {
+    const offsetPoints = [];
+    for (let i = 0; i <= CURVE_RESOLUTION; i++) {
+        const pt = masterPoints[i].clone();
+        const normal = frames.normals[i].clone();
+        const binormal = frames.binormals[i].clone();
+
+        // Offset locally
+        pt.add(normal.multiplyScalar(offsetX / 1000.0)); // Convert meters offset to km
+        pt.add(binormal.multiplyScalar(offsetY / 1000.0));
+
+        offsetPoints.push(pt);
+    }
+    return new THREE.CatmullRomCurve3(offsetPoints);
+}
+
+// --------------------------------------------------------
+// 3. LAYER GROUPS & ASSET GENERATION
+// --------------------------------------------------------
+const layers = {
+    gas: new THREE.Group(),
+    crude: new THREE.Group(),
+    power: new THREE.Group(),
+    fiber: new THREE.Group(),
+    sectors: new THREE.Group(),
+    bathymetry: new THREE.Group(),
+    stations: new THREE.Group()
+};
+Object.values(layers).forEach(g => scene.add(g));
+
+// --- Bathymetry Terrain ---
+// We generate a strip geometry representing the seabed corridor
+const seabedWidthKm = 5.0; // 5km wide corridor
+const seabedGeo = new THREE.PlaneGeometry(seabedWidthKm, MAX_LENGTH, 10, CURVE_RESOLUTION);
+const posAttr = seabedGeo.attributes.position;
+const seabedColors = [];
+const colorObj = new THREE.Color();
+
+for (let i = 0; i <= CURVE_RESOLUTION; i++) {
+    const t = i / CURVE_RESOLUTION;
+    const kp = t * MAX_LENGTH;
+    const basePt = masterPoints[i];
+    const normal = frames.normals[i];
+
+    // Depth-based shading (darker in basin)
+    const depthKm = getDepthKmAtKP(kp);
+    const depthRatio = Math.min(depthKm / 4.2, 1.0); // 4.2km is max
+    colorObj.setHSL(0.55, 0.4, 0.4 - (depthRatio * 0.35)); // Blue-green, darker at depth
+
+    for (let w = 0; w <= 10; w++) {
+        const rowOffset = (w / 10) - 0.5; // -0.5 to 0.5
+        const currentPt = basePt.clone().add(normal.clone().multiplyScalar(rowOffset * seabedWidthKm));
+
+        const idx = (i * 11 + w) * 3;
+        posAttr.array[idx] = currentPt.x;
+        posAttr.array[idx + 1] = currentPt.y;
+        posAttr.array[idx + 2] = currentPt.z;
+
+        seabedColors.push(colorObj.r, colorObj.g, colorObj.b);
+    }
+}
+seabedGeo.setAttribute('color', new THREE.Float32BufferAttribute(seabedColors, 3));
+seabedGeo.computeVertexNormals();
+
+const seabedMat = new THREE.MeshStandardMaterial({
+    vertexColors: true,
     roughness: 0.9,
     metalness: 0.1,
-    flatShading: false
+    side: THREE.DoubleSide,
+    wireframe: false
 });
-const terrain = new THREE.Mesh(terrainGeo, terrainMat);
-terrain.rotation.x = -Math.PI / 2;
-terrain.position.y = -2;
-scene.add(terrain);
+const bathymetryMesh = new THREE.Mesh(seabedGeo, seabedMat);
+layers.bathymetry.add(bathymetryMesh);
 
-// Solid base
-const baseGeo = new THREE.PlaneGeometry(120, 120);
-const baseMat = new THREE.MeshStandardMaterial({ color: 0x111b15 });
-const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-baseMesh.rotation.x = -Math.PI / 2;
-baseMesh.position.y = -6; // push deeper
-scene.add(baseMesh);
 
-// 2. Water Environment
-scene.fog = new THREE.FogExp2(0x0a1e29, 0.02); // Deep blue-green fog, denser
+// --- Assets (Pipelines & Cables) ---
+// Note: Realistically, a 1m diameter pipe seen from space is invisible.
+// To make it viewable, we slightly exaggerate their width visually, or we rely on close-ups.
+// Diameter is scaled up artificially by ~100x for visibility unless zoomed in,
+// but since the prompt says "engineering realistic", we will use smaller radii but
+// emissive or bright materials so they pop out. 
+// 1.2 meters = 0.0012 km. If we use R=0.01 it's 10 meters thick.
 
-const waterGeo = new THREE.PlaneGeometry(150, 150);
-const waterMat = new THREE.MeshStandardMaterial({
-    color: 0x001522,
-    transparent: true,
-    opacity: 0.85, // More opaque, less glassy
-    roughness: 0.1,
-    metalness: 0.1,
-    depthWrite: false
-});
-const water = new THREE.Mesh(waterGeo, waterMat);
-water.rotation.x = -Math.PI / 2;
-water.position.y = 12; // Higher water level
-scene.add(water);
-
-// 3. Pipeline (Cylinder along X axis)
-materials.pipeline = new THREE.MeshStandardMaterial({
-    color: 0x00ff88, // Nominal green
-    roughness: 0.7, // Matte
-    metalness: 0.3  // Not too glossy
-});
-const pipeGeo = new THREE.CylinderGeometry(0.8, 0.8, 100, 32);
-const pipeline = new THREE.Mesh(pipeGeo, materials.pipeline);
-pipeline.rotation.z = Math.PI / 2;
-pipeline.position.y = -1;
-scene.add(pipeline);
-
-// Add pipe joints and supports
-for (let i = -40; i <= 40; i += 10) {
-    // Joint
-    const jointGeo = new THREE.CylinderGeometry(0.95, 0.95, 1, 16);
-    const jointMat = new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.8, metalness: 0.4 });
-    const joint = new THREE.Mesh(jointGeo, jointMat);
-    joint.rotation.z = Math.PI / 2;
-    joint.position.set(i, -1, 0);
-    scene.add(joint);
-
-    // Concrete Support
-    const supportGeo = new THREE.BoxGeometry(2.5, 1.5, 2.5);
-    const supportMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.9, metalness: 0.1 });
-    const support = new THREE.Mesh(supportGeo, supportMat);
-    support.position.set(i, -2.25, 0); // Resting on seabed
-    scene.add(support);
+function createPipeline(curve, radiusKm, colorHex, group) {
+    const geo = new THREE.TubeGeometry(curve, CURVE_RESOLUTION * 2, radiusKm, 8, false);
+    const mat = new THREE.MeshStandardMaterial({
+        color: colorHex,
+        roughness: 0.6,
+        metalness: 0.4
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    group.add(mesh);
 }
 
-// 4. AUV (Industrial Inspection Torpedo)
-auv = new THREE.Group();
+// Generate the 5 lines with respective offsets and slight burial (Y offset = -0.5m)
+// 1. Gas Pipeline A (OffsetX: -600m)
+const curveGasA = generateOffsetCurve(-600, -0.5);
+createPipeline(curveGasA, 0.015, 0x00ff88, layers.gas);
 
-// Main Torpedo Body
-const bodyGeo = new THREE.CylinderGeometry(0.6, 0.6, 3.5, 32);
-const bodyMat = new THREE.MeshStandardMaterial({
-    color: 0xdddddf, // Neutral light grey/white
-    metalness: 0.2,
-    roughness: 0.7
+// 2. Gas Pipeline B (OffsetX: -200m)
+const curveGasB = generateOffsetCurve(-200, -0.5);
+createPipeline(curveGasB, 0.015, 0x00ff88, layers.gas);
+
+// 3. Crude Oil Pipeline (OffsetX: 200m)
+const curveCrude = generateOffsetCurve(200, -0.5);
+createPipeline(curveCrude, 0.018, 0xffcc00, layers.crude);
+
+// 4. HV Power Cable (OffsetX: 500m)
+const curvePower = generateOffsetCurve(500, -0.5);
+createPipeline(curvePower, 0.005, 0xff3b3b, layers.power);
+
+// 5. Fiber Optic (OffsetX: 800m)
+const curveFiber = generateOffsetCurve(800, -0.5);
+createPipeline(curveFiber, 0.003, 0x00aaff, layers.fiber);
+
+
+// --- Sector Boundaries ---
+// 0, 350, 1100, 1550, 1900
+const sectorKPs = [350, 1100, 1550];
+sectorKPs.forEach(kp => {
+    const t = kp / MAX_LENGTH;
+    const pt = masterCurve.getPoint(t);
+    const tangent = masterCurve.getTangent(t).normalize();
+    const up = pt.clone().normalize(); // Away from earth center
+
+    // Create a subtle glowing vertical wall or line cutting the corridor
+    const wallGeo = new THREE.PlaneGeometry(10, 5); // 10km wide, 5km high
+    const wallMat = new THREE.MeshBasicMaterial({
+        color: 0x00f0ff,
+        transparent: true,
+        opacity: 0.1,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+    });
+    const wall = new THREE.Mesh(wallGeo, wallMat);
+
+    // Position and align
+    wall.position.copy(pt);
+    wall.position.add(up.clone().multiplyScalar(2.5)); // raise it up
+
+    // Look at next point along path
+    wall.lookAt(pt.clone().add(tangent));
+    layers.sectors.add(wall);
 });
-const body = new THREE.Mesh(bodyGeo, bodyMat);
-body.rotation.z = Math.PI / 2;
 
-// Nose Cone (Sensor Array)
-const noseGeo = new THREE.SphereGeometry(0.6, 32, 16, 0, Math.PI);
-const noseMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 });
-const nose = new THREE.Mesh(noseGeo, noseMat);
-nose.rotation.z = -Math.PI / 2;
-nose.position.x = 1.75;
 
-// Spotlight for sensor array
-const sensorLight = new THREE.SpotLight(0xffffff, 2);
-sensorLight.angle = Math.PI / 6;
-sensorLight.penumbra = 0.5;
-sensorLight.distance = 20;
-sensorLight.position.set(1.75, 0, 0);
-sensorLight.target.position.set(20, -5, 0); // Point forward and slightly down
-auv.add(sensorLight);
-auv.add(sensorLight.target);
+// --- Resident Subsea Docking Stations ---
+// 1 per sector: Sectors (0-350, 350-1100, 1100-1550, 1550-1900)
+const stationKPs = [175, 725, 1325, 1725];
 
-// Tail Cone
-const tailGeo = new THREE.ConeGeometry(0.6, 1.2, 32);
-const tail = new THREE.Mesh(tailGeo, bodyMat);
-tail.rotation.z = -Math.PI / 2;
-tail.position.x = -2.35;
+stationKPs.forEach((kp, idx) => {
+    const t = kp / MAX_LENGTH;
+    const pt = masterCurve.getPoint(t);
+    const normal = frames.normals[Math.floor(t * CURVE_RESOLUTION)];
+    const up = pt.clone().normalize();
 
-// Thruster Prop guard
-const guardGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.5, 16);
-const guardMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.5, roughness: 0.5 });
-const guard = new THREE.Mesh(guardGeo, guardMat);
-guard.rotation.z = Math.PI / 2;
-guard.position.x = -3.0;
+    // Offset by 250m
+    const stPos = pt.clone().add(normal.clone().multiplyScalar(0.25));
 
-// Stabilizer Fins
-const finMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.6 });
-const finTopGeo = new THREE.BoxGeometry(0.8, 0.6, 0.1);
-const finTop = new THREE.Mesh(finTopGeo, finMat);
-finTop.position.set(-2, 0.8, 0);
+    // Simple boxy structure representing engineering docking station
+    const stGroup = new THREE.Group();
 
-const finBot = finTop.clone();
-finBot.position.set(-2, -0.8, 0);
+    // Base
+    const baseGeo = new THREE.BoxGeometry(0.1, 0.02, 0.15); // ~100m long base
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x445566, metalness: 0.8 });
+    const base = new THREE.Mesh(baseGeo, baseMat);
+    stGroup.add(base);
 
-const finSideGeo = new THREE.BoxGeometry(0.8, 0.1, 1.6);
-const finSide = new THREE.Mesh(finSideGeo, finMat);
-finSide.position.set(-2, 0, 0);
+    // Glowing port indicators
+    const portGeo = new THREE.BoxGeometry(0.02, 0.02, 0.02);
+    const portL1 = new THREE.Mesh(portGeo, new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
+    portL1.position.set(-0.03, 0.02, 0.05);
+    const portL2 = new THREE.Mesh(portGeo, new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
+    portL2.position.set(-0.03, 0.02, -0.05);
+    const portT1 = new THREE.Mesh(portGeo, new THREE.MeshBasicMaterial({ color: 0x0088ff }));
+    portT1.position.set(0.03, 0.02, 0);
 
-auv.add(body);
-auv.add(nose);
-auv.add(tail);
-auv.add(guard);
-auv.add(finTop);
-auv.add(finBot);
-auv.add(finSide);
+    stGroup.add(portL1, portL2, portT1);
 
-auv.position.set(30, 2, -10); // Start at base
-auv.rotation.y = Math.PI / 4;
-auv.scale.set(0.8, 0.8, 0.8); // Scale to fit Scene
-scene.add(auv);
+    // Align tightly to globe
+    stGroup.position.copy(stPos);
+    stGroup.lookAt(stPos.clone().add(up)); // face UP
+    stGroup.rotateX(Math.PI / 2); // flatten to seabed
 
-// 5. Risk Zone Volume (Translucent Red Sphere with Custom Shader for Hologram feel)
-const riskGeo = new THREE.SphereGeometry(6, 32, 32);
+    layers.stations.add(stGroup);
+});
 
-// Simple volumetric soft-edge shader
-const vShader = `
-    varying vec3 vPosition;
-    void main() {
-        vPosition = position;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+
+// --------------------------------------------------------
+// 4. HTML OVERLAYS (KP Markers & Station Labels)
+// --------------------------------------------------------
+const annotationsLayer = document.getElementById('annotations-layer');
+const labels = [];
+let kpLayerVisible = true;
+let stationLayerVisible = true;
+
+function createLabel(text, position, typeClass) {
+    const el = document.createElement('div');
+    el.className = typeClass;
+    el.innerText = text;
+    annotationsLayer.appendChild(el);
+    labels.push({ element: el, position: position, type: typeClass });
+}
+
+// Generate KP Markers every 50 km
+for (let kp = 0; kp <= MAX_LENGTH; kp += 50) {
+    const t = kp / MAX_LENGTH;
+    const pt = masterCurve.getPoint(t);
+    // Push label slightly above seabed
+    const up = pt.clone().normalize();
+    pt.add(up.multiplyScalar(0.5));
+    createLabel(`KP ${kp}`, pt, 'kp-marker');
+}
+
+// Generate Station Labels
+stationKPs.forEach((kp, i) => {
+    const t = kp / MAX_LENGTH;
+    const pt = masterCurve.getPoint(t);
+    const normal = frames.normals[Math.floor(t * CURVE_RESOLUTION)];
+    const up = pt.clone().normalize();
+    const stPos = pt.clone().add(normal.clone().multiplyScalar(0.25)).add(up.multiplyScalar(0.2));
+
+    createLabel(`STATION ${String.fromCharCode(65 + i)}\nINV-AUV-1\nINV-AUV-2\nTOOL-AUV-1`, stPos, 'station-marker');
+});
+
+function updateLabels() {
+    const tempV = new THREE.Vector3();
+    labels.forEach(label => {
+        // Toggle Check
+        if (label.type === 'kp-marker' && !kpLayerVisible) {
+            label.element.style.display = 'none'; return;
+        }
+        if (label.type === 'station-marker' && !stationLayerVisible) {
+            label.element.style.display = 'none'; return;
+        }
+
+        tempV.copy(label.position);
+        tempV.project(camera);
+
+        // Check if behind camera
+        if (tempV.z > 1) {
+            label.element.style.display = 'none';
+        } else {
+            label.element.style.display = 'block';
+            const x = (tempV.x * .5 + .5) * window.innerWidth;
+            const y = (tempV.y * -.5 + .5) * window.innerHeight;
+            label.element.style.left = `${x}px`;
+            label.element.style.top = `${y}px`;
+        }
+    });
+}
+
+
+// --------------------------------------------------------
+// 5. UI CONTROLS & EVENTS
+// --------------------------------------------------------
+// Layer checkboxes
+document.getElementById('layer-gas').addEventListener('change', e => layers.gas.visible = e.target.checked);
+document.getElementById('layer-crude').addEventListener('change', e => layers.crude.visible = e.target.checked);
+document.getElementById('layer-power').addEventListener('change', e => layers.power.visible = e.target.checked);
+document.getElementById('layer-fiber').addEventListener('change', e => layers.fiber.visible = e.target.checked);
+document.getElementById('layer-sectors').addEventListener('change', e => layers.sectors.visible = e.target.checked);
+document.getElementById('layer-bathymetry').addEventListener('change', e => layers.bathymetry.visible = e.target.checked);
+document.getElementById('layer-stations').addEventListener('change', e => {
+    layers.stations.visible = e.target.checked;
+    stationLayerVisible = e.target.checked;
+});
+document.getElementById('layer-kp').addEventListener('change', e => {
+    kpLayerVisible = e.target.checked;
+});
+
+
+// --------------------------------------------------------
+// 6. CAMERA NAVIGATION LOGIC
+// --------------------------------------------------------
+const GLOBAL_POS = masterCurve.getPoint(0.5).clone().normalize().multiplyScalar(R_EARTH + 1200);
+const GLOBAL_LOOK = masterCurve.getPoint(0.5);
+
+camera.position.copy(GLOBAL_POS);
+camera.lookAt(GLOBAL_LOOK);
+
+let cameraTarget = GLOBAL_LOOK.clone();
+
+function switchMode(mode) {
+    document.querySelectorAll('.nav-controls .btn').forEach(b => b.classList.remove('active-nav'));
+
+    if (mode === 'GLOBAL') {
+        document.getElementById('nav-global').classList.add('active-nav');
+        document.getElementById('val-sector').innerText = 'GLOBAL';
+
+        gsap.to(camera.position, {
+            x: GLOBAL_POS.x, y: GLOBAL_POS.y, z: GLOBAL_POS.z,
+            duration: 3, ease: 'power2.inOut'
+        });
+        gsap.to(cameraTarget, {
+            x: GLOBAL_LOOK.x, y: GLOBAL_LOOK.y, z: GLOBAL_LOOK.z,
+            duration: 3, ease: 'power2.inOut'
+        });
     }
-`;
-const fShader = `
-    uniform float opacity;
-    varying vec3 vPosition;
-    void main() {
-        float dist = length(vPosition) / 6.0; // 6 is the radius
-        float intensity = smoothstep(1.0, 0.0, dist);
-        gl_FragColor = vec4(1.0, 0.2, 0.2, intensity);
-        gl_FragColor.a *= opacity * 0.8;
+    else if (mode === 'SECTOR') {
+        document.getElementById('nav-sector').classList.add('active-nav');
+        document.getElementById('val-sector').innerText = 'SECTOR B [DEEP BASIN]';
+
+        const pt = masterCurve.getPoint(0.4); // Focus on deep basin
+        const up = pt.clone().normalize();
+        const navPos = pt.clone().add(up.multiplyScalar(40)); // 40km above
+
+        gsap.to(camera.position, {
+            x: navPos.x, y: navPos.y, z: navPos.z,
+            duration: 4, ease: 'power3.inOut'
+        });
+        gsap.to(cameraTarget, {
+            x: pt.x, y: pt.y, z: pt.z,
+            duration: 4, ease: 'power3.inOut'
+        });
     }
-`;
-materials.risk = new THREE.ShaderMaterial({
-    uniforms: { opacity: { value: 0.0 } },
-    vertexShader: vShader,
-    fragmentShader: fShader,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide
-});
+    else if (mode === 'INSPECTION') {
+        document.getElementById('nav-inspection').classList.add('active-nav');
+        document.getElementById('val-sector').innerText = 'STATION B [CLOSE UP]';
 
-riskZone = new THREE.Mesh(riskGeo, materials.risk);
-riskZone.position.set(config.anomalyPos.x, config.anomalyPos.y, config.anomalyPos.z);
-scene.add(riskZone);
+        const focusKp = 725; // Station B
+        const t = focusKp / MAX_LENGTH;
+        const pt = masterCurve.getPoint(t);
+        const tangent = masterCurve.getTangent(t);
+        const up = pt.clone().normalize();
 
-// Highlight Pipeline segment under risk zone
-const highlightGeo = new THREE.CylinderGeometry(0.85, 0.85, 15, 16);
-const highlightMat = new THREE.MeshBasicMaterial({
-    color: 0xffaa00,
-    transparent: true,
-    opacity: 0.0,
-    blending: THREE.AdditiveBlending
-});
-const pipeHighlight = new THREE.Mesh(highlightGeo, highlightMat);
-pipeHighlight.rotation.z = Math.PI / 2;
-pipeHighlight.position.set(config.anomalyPos.x, -1, 0);
-scene.add(pipeHighlight);
+        // Go 2km up, slightly shifted back along tangent
+        const navPos = pt.clone().add(up.multiplyScalar(1.5)).sub(tangent.multiplyScalar(3));
 
-// Make the highlight opacity linked to the risk material opacity
-gsap.ticker.add(() => {
-    highlightMat.opacity = materials.risk.uniforms.opacity.value * 0.8;
-});
+        gsap.to(camera.position, {
+            x: navPos.x, y: navPos.y, z: navPos.z,
+            duration: 4, ease: 'power3.inOut'
+        });
+        gsap.to(cameraTarget, {
+            x: pt.x, y: pt.y, z: pt.z,
+            duration: 4, ease: 'power3.inOut'
+        });
+    }
+}
 
+document.getElementById('nav-global').onclick = () => switchMode('GLOBAL');
+document.getElementById('nav-sector').onclick = () => switchMode('SECTOR');
+document.getElementById('nav-inspection').onclick = () => switchMode('INSPECTION');
 
-// Initialization Logs & Loop inside a trigger function
-let isSimInitialized = false;
-const clock = new THREE.Clock();
-
-function initSimulation() {
-    if (isSimInitialized) return;
-    isSimInitialized = true;
-
-    // Size it correctly now that the container is visible
+// --------------------------------------------------------
+// 7. RENDER LOOP
+// --------------------------------------------------------
+window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-
-    addLog('System booting...', 'info');
-    addLog('NeptuneOS active. Connected to subsea sensor array.', 'nominal');
-
-    // Jump straight to Uncertainty as demanded by the map anomaly workflow
-    transition(STATES.UNCERTAINTY);
-
-    animate();
-}
+});
 
 function animate() {
     requestAnimationFrame(animate);
-    const time = clock.getElapsedTime();
+    camera.lookAt(cameraTarget);
 
-    // AUV hovering animation
-    if (auv) {
-        auv.position.y = 2 + Math.sin(time * 2) * 0.2;
+    updateLabels(); // Sync 2D HTML markers with 3D projection
 
-        const targetX = currentState === STATES.DISPATCH ? config.anomalyPos.x : 30;
-        const targetZ = currentState === STATES.DISPATCH ? config.anomalyPos.z : -10;
-        const dx = targetX - auv.position.x;
-        const dz = targetZ - auv.position.z;
-        if (Math.abs(dx) > 0.1 || Math.abs(dz) > 0.1) {
-            const angle = Math.atan2(dx, dz);
-            auv.rotation.y += (angle - auv.rotation.y) * 0.05;
-        }
-    }
-
-    // Risk zone pulsing
-    if (currentState === STATES.UNCERTAINTY || currentState === STATES.DISPATCH) {
-        const pulse = 1 + Math.sin(time * 3) * 0.05;
-        riskZone.scale.set(pulse, pulse, pulse);
-    }
-
-    waterMat.opacity = 0.3 + Math.sin(time) * 0.02;
     renderer.render(scene, camera);
 }
-
-// Map View Interaction Logic
-const mapEls = {
-    view: document.getElementById('map-view'),
-    popup: document.getElementById('map-popup'),
-    anomalies: document.querySelectorAll('.anomaly-point-svg'),
-    btnSendAuv: document.getElementById('btn-send-auv'),
-    btnClosePopup: document.getElementById('btn-close-popup'),
-    simView: document.getElementById('simulation-view')
-};
-
-let selectedAnomaly = null;
-
-mapEls.anomalies.forEach(point => {
-    point.addEventListener('click', (e) => {
-        selectedAnomaly = e.target.closest('.anomaly-point-svg').id;
-        mapEls.popup.classList.remove('hidden');
-    });
-});
-
-mapEls.btnClosePopup.addEventListener('click', () => {
-    mapEls.popup.classList.add('hidden');
-    selectedAnomaly = null;
-});
-
-mapEls.btnSendAuv.addEventListener('click', () => {
-    mapEls.btnSendAuv.innerHTML = `<span class="btn-icon">⏳</span> SENDING AUV...`;
-
-    setTimeout(() => {
-        mapEls.view.classList.add('hidden');
-        mapEls.simView.style.display = 'block';
-
-        initSimulation();
-
-        setTimeout(() => {
-            transition(STATES.DISPATCH);
-        }, 800);
-
-    }, 1500);
-});
-
-// Resize handler
-window.addEventListener('resize', () => {
-    if (!isSimInitialized) return;
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-});
+animate();
