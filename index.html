@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeptuneOS | Interactive Simulation</title>
+    <!-- Modern Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <!-- Animation Lib -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <!-- 3D Engine -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- 2D Map Initial View -->
+    <div id="map-view">
+        <header class="top-bar">
+            <div class="logo">
+                <span class="brand">NeptuneOS</span>
+                <span class="version">GLOBAL OVERVIEW Map</span>
+            </div>
+            <div class="system-status">SECTOR SCAN: <span class="warning-text" style="margin-left:5px;">ANOMALY
+                    DETECTED</span></div>
+        </header>
+
+        <div class="map-container">
+            <div class="map-grid"></div>
+
+            <!-- Curved SVG Pipeline Map -->
+            <svg class="map-pipeline-svg" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid slice"
+                style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:1;">
+                <!-- Abstract Coasts -->
+                <!-- UAE Coast (left) -->
+                <path d="M -100 -100 L 250 -100 L 200 150 L 90 300 L 150 450 L 40 700 L -100 700 Z"
+                    fill="rgba(0, 240, 255, 0.05)" stroke="var(--color-nominal)" stroke-width="1"
+                    stroke-dasharray="5,5" />
+                <!-- India Coast (right) -->
+                <path d="M 1100 -100 L 850 -100 L 920 150 L 780 280 L 850 400 L 750 500 L 900 700 L 1100 700 Z"
+                    fill="rgba(0, 240, 255, 0.05)" stroke="var(--color-nominal)" stroke-width="1"
+                    stroke-dasharray="5,5" />
+
+                <!-- Curved Pipe -->
+                <path d="M 810 330 C 650 500, 400 120, 110 300" fill="none" class="animated-pipe"
+                    stroke="var(--color-nominal)" stroke-width="3"
+                    style="filter: drop-shadow(0 0 6px var(--color-nominal));" />
+
+                <!-- Terminals -->
+                <text x="830" y="315" fill="var(--text-primary)" font-family="var(--font-ui)" font-weight="700"
+                    font-size="16">GUJARAT, INDIA</text>
+                <text x="830" y="335" fill="var(--text-secondary)" font-family="var(--font-log)" font-size="11">TERMINAL
+                    OMEGA</text>
+                <circle cx="810" cy="330" r="5" fill="var(--color-nominal)"
+                    style="filter: drop-shadow(0 0 5px var(--color-nominal));" />
+
+                <text x="90" y="285" fill="var(--text-primary)" font-family="var(--font-ui)" font-weight="700"
+                    font-size="16" text-anchor="end">FUJAIRAH, UAE</text>
+                <text x="90" y="305" fill="var(--text-secondary)" font-family="var(--font-log)" font-size="11"
+                    text-anchor="end">TERMINAL ALPHA</text>
+                <circle cx="110" cy="300" r="5" fill="var(--color-nominal)"
+                    style="filter: drop-shadow(0 0 5px var(--color-nominal));" />
+
+                <!-- Anomaly 1 (~KP-34) (Yellow) -->
+                <g transform="translate(643, 364)">
+                    <g class="anomaly-point-svg" id="anomaly-1" data-severity="warning">
+                        <circle cx="0" cy="0" r="20" fill="none" class="pulse-circle-svg" stroke="var(--color-warning)"
+                            stroke-width="2" />
+                        <circle class="anomaly-core" cx="0" cy="0" r="8" fill="var(--color-warning)"
+                            style="filter: drop-shadow(0 0 8px orange);" />
+                    </g>
+                </g>
+
+                <!-- Anomaly 2 (~KP-78) (Red) -->
+                <g transform="translate(359, 259)">
+                    <g class="anomaly-point-svg" id="anomaly-2" data-severity="critical">
+                        <circle cx="0" cy="0" r="20" fill="none" class="pulse-circle-svg" stroke="var(--color-critical)"
+                            stroke-width="2" />
+                        <circle class="anomaly-core" cx="0" cy="0" r="8" fill="var(--color-critical)"
+                            style="filter: drop-shadow(0 0 8px red);" />
+                    </g>
+                </g>
+            </svg>
+
+            <!-- Popup Modal -->
+            <div class="map-popup hidden" id="map-popup">
+                <div class="panel-header">ANOMALY DETECTED</div>
+                <div class="metrics">
+                    <div class="metric">
+                        <div class="metric-label">SECTOR FAULT</div>
+                        <div class="metric-value critical-text">KP-32 to KP-36</div>
+                    </div>
+                </div>
+                <div class="buttons" style="margin-top: 1rem;">
+                    <button class="btn critical-btn" id="btn-send-auv" style="width: 100%; justify-content: center;">
+                        <span class="btn-icon">🚀</span> SEND AUV
+                    </button>
+                    <button class="btn nominal-btn" id="btn-close-popup"
+                        style="width: 100%; justify-content: center; margin-top: 0.5rem;">
+                        IGNORE
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3D Simulation View (Hidden Initially) -->
+    <div id="simulation-view" style="display: none;">
+        <div id="canvas-container"></div>
+
+        <div id="ui-layer">
+            <!-- Header -->
+            <header class="top-bar">
+                <div class="logo">
+                    <span class="brand">NeptuneOS</span>
+                    <span class="version">v2.4.1 [AUTO-MONITOR]</span>
+                </div>
+                <div class="system-status" id="sys-status">SYS: NOMINAL <span class="indicator"></span></div>
+            </header>
+
+            <!-- Left Panel -->
+            <aside class="panel left-panel">
+                <div class="panel-header">SYSTEM HEALTH</div>
+                <div class="metrics">
+                    <div class="metric">
+                        <div class="metric-label">PIPELINE INTEGRITY</div>
+                        <div class="metric-value nominal-text" id="val-integrity">100%</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill nominal-bg" id="bar-integrity" style="width: 100%;"></div>
+                        </div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">CONFIDENCE</div>
+                        <div class="metric-value nominal-text" id="val-confidence">LOW</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill nominal-bg" id="bar-confidence" style="width: 20%;"></div>
+                        </div>
+                    </div>
+                    <div class="metric" style="margin-top: 1.5rem;">
+                        <div class="metric-label">KP FAULT RANGE</div>
+                        <div class="metric-value highlight-text" id="val-kp" style="font-size: 1.5rem;">--</div>
+                    </div>
+                </div>
+
+                <div class="system-alerts" id="alerts-container">
+                    <!-- Alerts inject here -->
+                </div>
+            </aside>
+
+            <!-- Right Panel -->
+            <aside class="panel right-panel">
+                <div class="panel-header element-flex">
+                    <span>EVENT LOG</span>
+                    <span class="live-badge">LIVE</span>
+                </div>
+                <div class="log-container" id="event-log">
+                    <!-- Logs inject here -->
+                </div>
+                <div class="scanline"></div>
+            </aside>
+
+            <!-- Bottom Panel -->
+            <footer class="panel bottom-panel">
+                <div class="panel-header">SIMULATION CONTROLS</div>
+                <div class="control-row">
+                    <div class="state-readout">
+                        <span class="label">CURRENT STATE:</span>
+                        <span class="value nominal-text" id="val-state">NORMAL</span>
+                    </div>
+                    <div class="buttons">
+                        <button id="btn-investigate" class="btn warning-btn">
+                            <span class="btn-icon">🔍</span> INVESTIGATE
+                        </button>
+                    </div>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
