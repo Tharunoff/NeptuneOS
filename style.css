@@ -461,3 +461,51 @@ body {
     white-space: nowrap;
     box-shadow: 0 0 10px var(--color-nominal-glow);
 }
+
+/* Digital Twin Debug Tooltip */
+.debug-tooltip {
+    position: absolute;
+    background: rgba(4, 9, 20, 0.95);
+    border: 1px solid orange;
+    padding: 1rem;
+    color: var(--text-primary);
+    font-family: var(--font-log);
+    font-size: 0.8rem;
+    pointer-events: none;
+    z-index: 100;
+    box-shadow: 0 0 15px rgba(255, 165, 0, 0.2);
+    backdrop-filter: blur(5px);
+    width: 250px;
+    transform: translate(15px, 15px);
+    /* Offset from cursor */
+}
+
+.debug-header {
+    font-family: var(--font-ui);
+    font-weight: 700;
+    color: orange;
+    margin-bottom: 0.8rem;
+    font-size: 1rem;
+    border-bottom: 1px solid rgba(255, 165, 0, 0.3);
+    padding-bottom: 0.3rem;
+}
+
+.debug-metric {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.4rem;
+}
+
+.debug-metric span:first-child {
+    color: var(--text-secondary);
+}
+
+.debug-metric span:last-child {
+    font-weight: 700;
+}
+
+.debug-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 0.6rem 0;
+}

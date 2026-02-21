@@ -115,6 +115,73 @@ function generateOffsetCurve(offsetX, offsetY) {
 }
 
 // --------------------------------------------------------
+// 2.5. DIGITAL TWIN BACKEND STRUCTURES
+// --------------------------------------------------------
+class SensorCluster {
+    constructor() {
+        this.pressure = { baseline: 100.0, current: 100.0, noise: 0.5, drift: 0.01 };
+        this.flow = { baseline: 50.0, current: 50.0, noise: 0.2, drift: 0.0 };
+        this.acoustic = { baseline: 10.0, current: 10.0, noise: 2.0, drift: 0.0 };
+        this.temperature = { baseline: 4.0, current: 4.0, noise: 0.1, drift: 0.001 };
+        this.strain = { baseline: 0.0, current: 0.0, noise: 0.05, drift: 0.005 };
+        this.tilt = { baseline: 0.0, current: 0.0, noise: 0.1, drift: 0.01 };
+        this.timestamp_history = [Date.now()];
+        this.confidence_score = 0.99;
+    }
+}
+
+class SegmentNode {
+    constructor(id, assetType, kpStart, kpEnd, lat, lon, depth, sectorId) {
+        this.segment_id = id;
+        this.asset_type = assetType;
+        this.kp_start = kpStart;
+        this.kp_end = kpEnd;
+        this.latitude = lat;
+        this.longitude = lon;
+        this.depth = depth;
+        this.sector_id = sectorId;
+        this.health_state = "healthy";
+        this.uncertainty_buffer = 0.0;
+        this.sensor_cluster = new SensorCluster();
+    }
+}
+
+class SectorDataNode {
+    constructor(sectorId, kpRange, stationId) {
+        this.sector_id = sectorId;
+        this.kp_range = kpRange;
+        this.stability_index = 100.0;
+        this.aggregated_variance = 0.0;
+        this.active_segments = 0;
+        this.resident_station_id = stationId;
+    }
+}
+
+// Global state container
+const digitalTwinDB = {
+    assets: {
+        'gas_a': [],
+        'gas_b': [],
+        'crude': [],
+        'power': [],
+        'fiber': []
+    },
+    sectors: {
+        'A': new SectorDataNode('A', [0, 350], 'STATION_A'),
+        'B': new SectorDataNode('B', [350, 1100], 'STATION_B'),
+        'C': new SectorDataNode('C', [1100, 1550], 'STATION_C'),
+        'D': new SectorDataNode('D', [1550, 1900], 'STATION_D')
+    }
+};
+
+function determineSector(kp) {
+    if (kp <= 350) return 'A';
+    if (kp <= 1100) return 'B';
+    if (kp <= 1550) return 'C';
+    return 'D';
+}
+
+// --------------------------------------------------------
 // 3. LAYER GROUPS & ASSET GENERATION
 // --------------------------------------------------------
 const layers = {
@@ -181,7 +248,7 @@ layers.bathymetry.add(bathymetryMesh);
 // emissive or bright materials so they pop out. 
 // 1.2 meters = 0.0012 km. If we use R=0.01 it's 10 meters thick.
 
-function createPipeline(curve, radiusKm, colorHex, group) {
+function createPipeline(curve, radiusKm, colorHex, group, assetId) {
     const geo = new THREE.TubeGeometry(curve, CURVE_RESOLUTION * 2, radiusKm, 8, false);
     const mat = new THREE.MeshStandardMaterial({
         color: colorHex,
@@ -189,29 +256,53 @@ function createPipeline(curve, radiusKm, colorHex, group) {
         metalness: 0.4
     });
     const mesh = new THREE.Mesh(geo, mat);
+
+    // Tag the mesh for raycasting
+    mesh.userData = { assetId: assetId };
     group.add(mesh);
+
+    // SILENTLY GENERATE 1KM DIGITAL SEGMENT NODES FOR THIS ASSET
+    for (let kp = 0; kp < MAX_LENGTH; kp++) {
+        const t = kp / MAX_LENGTH;
+        const coord = interpolateCoord(t);
+        const depth = getDepthKmAtKP(kp);
+        const sector = determineSector(kp);
+
+        const segment = new SegmentNode(
+            `${assetId}_${kp}`,
+            assetId,
+            kp,
+            kp + 1,
+            coord.lat,
+            coord.lon,
+            depth,
+            sector
+        );
+        digitalTwinDB.assets[assetId].push(segment);
+        digitalTwinDB.sectors[sector].active_segments++;
+    }
 }
 
 // Generate the 5 lines with respective offsets and slight burial (Y offset = -0.5m)
 // 1. Gas Pipeline A (OffsetX: -600m)
 const curveGasA = generateOffsetCurve(-600, -0.5);
-createPipeline(curveGasA, 0.015, 0x00ff88, layers.gas);
+createPipeline(curveGasA, 0.015, 0x00ff88, layers.gas, 'gas_a');
 
 // 2. Gas Pipeline B (OffsetX: -200m)
 const curveGasB = generateOffsetCurve(-200, -0.5);
-createPipeline(curveGasB, 0.015, 0x00ff88, layers.gas);
+createPipeline(curveGasB, 0.015, 0x00ff88, layers.gas, 'gas_b');
 
 // 3. Crude Oil Pipeline (OffsetX: 200m)
 const curveCrude = generateOffsetCurve(200, -0.5);
-createPipeline(curveCrude, 0.018, 0xffcc00, layers.crude);
+createPipeline(curveCrude, 0.018, 0xffcc00, layers.crude, 'crude');
 
 // 4. HV Power Cable (OffsetX: 500m)
 const curvePower = generateOffsetCurve(500, -0.5);
-createPipeline(curvePower, 0.005, 0xff3b3b, layers.power);
+createPipeline(curvePower, 0.005, 0xff3b3b, layers.power, 'power');
 
 // 5. Fiber Optic (OffsetX: 800m)
 const curveFiber = generateOffsetCurve(800, -0.5);
-createPipeline(curveFiber, 0.003, 0x00aaff, layers.fiber);
+createPipeline(curveFiber, 0.003, 0x00aaff, layers.fiber, 'fiber');
 
 
 // --- Sector Boundaries ---
@@ -368,6 +459,92 @@ document.getElementById('layer-stations').addEventListener('change', e => {
 });
 document.getElementById('layer-kp').addEventListener('change', e => {
     kpLayerVisible = e.target.checked;
+});
+
+// Debug Mode State
+let debugModeActive = false;
+const debugTooltip = document.getElementById('debug-tooltip');
+document.getElementById('mode-debug').addEventListener('change', e => {
+    debugModeActive = e.target.checked;
+    if (!debugModeActive) debugTooltip.classList.add('hidden');
+});
+
+// --- Raycasting for Digital Twin Segments ---
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+// We only want to intersect the pipelines
+const interactableObjects = [
+    ...layers.gas.children,
+    ...layers.crude.children,
+    ...layers.power.children,
+    ...layers.fiber.children
+];
+
+// Helper: Find closest Master Curve 't' from a 3D point
+function findClosestTOnCurve(point, curve, resolution = 200) {
+    let closestDistSq = Infinity;
+    let closestT = 0;
+    for (let i = 0; i <= resolution; i++) {
+        const t = i / resolution;
+        const pt = curve.getPoint(t);
+        const distSq = point.distanceToSquared(pt);
+        if (distSq < closestDistSq) {
+            closestDistSq = distSq;
+            closestT = t;
+        }
+    }
+    return closestT;
+}
+
+window.addEventListener('mousemove', (event) => {
+    if (!debugModeActive) return;
+
+    // Update mouse coords for raycaster
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+    // Update tooltip position
+    debugTooltip.style.left = `${event.clientX}px`;
+    debugTooltip.style.top = `${event.clientY}px`;
+
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(interactableObjects);
+
+    if (intersects.length > 0) {
+        // We hit a pipeline
+        const hit = intersects[0];
+        const assetId = hit.object.userData.assetId;
+
+        // Find which KP we are roughly at by mapping to the master curve
+        const closestT = findClosestTOnCurve(hit.point, masterCurve);
+
+        // Convert 't' to KP, then index
+        const exactKP = closestT * MAX_LENGTH;
+        let segmentIndex = Math.floor(exactKP);
+
+        // Safety bounds
+        if (segmentIndex < 0) segmentIndex = 0;
+        if (segmentIndex >= MAX_LENGTH) segmentIndex = MAX_LENGTH - 1;
+
+        // Fetch Digital Twin Data
+        const segmentData = digitalTwinDB.assets[assetId][segmentIndex];
+
+        if (segmentData) {
+            debugTooltip.classList.remove('hidden');
+
+            // Populate UI
+            document.getElementById('debug-asset-name').innerText = assetId.toUpperCase();
+            document.getElementById('debug-kp').innerText = `${segmentData.kp_start} - ${segmentData.kp_end}`;
+            document.getElementById('debug-coords').innerText = `${segmentData.latitude.toFixed(4)}, ${segmentData.longitude.toFixed(4)}`;
+            document.getElementById('debug-depth').innerText = `${(segmentData.depth * 1000).toFixed(0)}m`;
+            document.getElementById('debug-sector').innerText = `Sector ${segmentData.sector_id}`;
+            document.getElementById('debug-health').innerText = segmentData.health_state.toUpperCase();
+            document.getElementById('debug-uncertainty').innerText = segmentData.uncertainty_buffer.toFixed(2);
+        }
+    } else {
+        // No hit
+        debugTooltip.classList.add('hidden');
+    }
 });
 
 

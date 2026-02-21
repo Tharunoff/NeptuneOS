@@ -106,33 +106,65 @@
                         <span class="toggle-box"></span>
                         <span class="layer-name">KP Markers (50km)</span>
                     </label>
+
+                    <div style="height: 1px; background: rgba(255,255,255,0.1); margin: 10px 0;"></div>
+
+                    <label class="layer-toggle"
+                        style="background: rgba(255,100,0,0.1); border: 1px solid rgba(255,100,0,0.3);">
+                        <input type="checkbox" id="mode-debug">
+                        <span class="toggle-box" style="border-color: orange;"></span>
+                        <span class="layer-name" style="color: orange; font-weight: bold;">VISUAL DEBUG MODE</span>
+                    </label>
                 </div>
             </aside>
-
-            <!-- Bottom Panel (Asset Details) -->
-            <footer class="panel bottom-panel">
-                <div class="panel-header">CORRIDOR TELEMETRY</div>
-                <div class="telemetry-grid">
-                    <div class="metric">
-                        <div class="metric-label">START NODE</div>
-                        <div class="metric-value">MUNDRA [KP 0]</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">END NODE</div>
-                        <div class="metric-value">FUJAIRAH [KP 1900]</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">MAX DEPTH</div>
-                        <div class="metric-value warning-text">-4200 m (Sector B)</div>
-                    </div>
-                </div>
-            </footer>
+            <span class="toggle-box"></span>
+            <span class="layer-name">Resident Stations</span>
+            </label>
+            <label class="layer-toggle">
+                <input type="checkbox" id="layer-kp" checked>
+                <span class="toggle-box"></span>
+                <span class="layer-name">KP Markers (50km)</span>
+            </label>
         </div>
+        </aside>
+
+        <!-- Bottom Panel (Asset Details) -->
+        <footer class="panel bottom-panel">
+            <div class="panel-header">CORRIDOR TELEMETRY</div>
+            <div class="telemetry-grid">
+                <div class="metric">
+                    <div class="metric-label">START NODE</div>
+                    <div class="metric-value">MUNDRA [KP 0]</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">END NODE</div>
+                    <div class="metric-value">FUJAIRAH [KP 1900]</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">MAX DEPTH</div>
+                    <div class="metric-value warning-text">-4200 m (Sector B)</div>
+                </div>
+            </div>
+        </footer>
+    </div>
     </div>
 
     <!-- UI Overlay for 2D Canvas Text labels (KP Markers, Stations) -->
     <div id="annotations-layer"
         style="position: absolute; top: 0; left: 0; pointer-events: none; z-index: 5; width:100%; height:100%; overflow:hidden;">
+    </div>
+
+    <!-- Digital Twin Hover Tooltip -->
+    <div id="debug-tooltip" class="debug-tooltip hidden">
+        <div class="debug-header" id="debug-asset-name">ASSET ID</div>
+        <div class="debug-metric"><span>KP:</span> <span id="debug-kp">--</span></div>
+        <div class="debug-metric"><span>Coordinates:</span> <span id="debug-coords">--</span></div>
+        <div class="debug-metric"><span>Depth:</span> <span id="debug-depth">--</span></div>
+        <div class="debug-metric"><span>Sector:</span> <span id="debug-sector">--</span></div>
+        <div class="debug-divider"></div>
+        <div class="debug-metric"><span>Health State:</span> <span id="debug-health" class="nominal-text">NORMAL</span>
+        </div>
+        <div class="debug-metric"><span>Uncertainty:</span> <span id="debug-uncertainty">0.00</span></div>
     </div>
 
     <script src="script.js"></script>
