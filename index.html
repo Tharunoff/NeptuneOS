@@ -116,37 +116,82 @@
                         <span class="layer-name" style="color: orange; font-weight: bold;">VISUAL DEBUG MODE</span>
                     </label>
                 </div>
-            </aside>
-            <span class="toggle-box"></span>
-            <span class="layer-name">Resident Stations</span>
-            </label>
-            <label class="layer-toggle">
-                <input type="checkbox" id="layer-kp" checked>
-                <span class="toggle-box"></span>
-                <span class="layer-name">KP Markers (50km)</span>
-            </label>
-        </div>
-        </aside>
+            </aside> <!-- Hazard Injection Panel (Bottom Left) -->
+            <aside class="panel hazard-panel">
+                <div class="panel-header warning-text element-flex">
+                    <span>HAZARD ENGINE</span>
+                    <span class="live-badge"
+                        style="border-color: var(--color-warning); color: var(--color-warning);">PHASE 3</span>
+                </div>
 
-        <!-- Bottom Panel (Asset Details) -->
-        <footer class="panel bottom-panel">
-            <div class="panel-header">CORRIDOR TELEMETRY</div>
-            <div class="telemetry-grid">
-                <div class="metric">
-                    <div class="metric-label">START NODE</div>
-                    <div class="metric-value">MUNDRA [KP 0]</div>
+                <div class="hazard-controls">
+                    <div class="input-group">
+                        <label>ASSET TARGET</label>
+                        <select id="hz-asset" class="neptune-select">
+                            <option value="gas_a">Gas Pipeline A</option>
+                            <option value="gas_b">Gas Pipeline B</option>
+                            <option value="crude">Crude Oil Pipeline</option>
+                            <option value="power">HV Power Cable</option>
+                            <option value="fiber">Fiber Optic Cable</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label>KP LOCATION (0-1900)</label>
+                        <input type="number" id="hz-kp" class="neptune-input" min="0" max="1900" value="750">
+                    </div>
+
+                    <div class="input-group">
+                        <label>HAZARD TYPE</label>
+                        <select id="hz-type" class="neptune-select warning-text">
+                            <option value="anchor_drag">Anchor Drag Impact</option>
+                            <option value="corrosion">Corrosion Breach</option>
+                            <option value="gas_leak">Gas Micro-Leak</option>
+                            <option value="crude_rupture">Crude Oil Rupture</option>
+                            <option value="fiber_att">Fiber Signal Attenuation</option>
+                            <option value="landslide">Seabed Landslide</option>
+                            <option value="turbine_crack">Turbine Structure Crack</option>
+                            <option value="marine_collision">Marine Animal Collision</option>
+                            <option value="seismic">Seismic Micro-Tremor</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label>SEVERITY</label>
+                        <select id="hz-severity" class="neptune-select">
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high" class="warning-text">High</option>
+                            <option value="critical" class="critical-text">Critical</option>
+                        </select>
+                    </div>
+
+                    <button id="btn-inject" class="btn warning-btn"
+                        style="width: 100%; justify-content: center; margin-top: 0.5rem;">
+                        ⚡ INJECT ANOMALY
+                    </button>
                 </div>
-                <div class="metric">
-                    <div class="metric-label">END NODE</div>
-                    <div class="metric-value">FUJAIRAH [KP 1900]</div>
+            </aside>
+
+            <!-- Bottom Panel (Asset Details) -->
+            <footer class="panel bottom-panel">
+                <div class="panel-header">CORRIDOR TELEMETRY</div>
+                <div class="telemetry-grid">
+                    <div class="metric">
+                        <div class="metric-label">START NODE</div>
+                        <div class="metric-value">MUNDRA [KP 0]</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">END NODE</div>
+                        <div class="metric-value">FUJAIRAH [KP 1900]</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">MAX DEPTH</div>
+                        <div class="metric-value warning-text">-4200 m (Sector B)</div>
+                    </div>
                 </div>
-                <div class="metric">
-                    <div class="metric-label">MAX DEPTH</div>
-                    <div class="metric-value warning-text">-4200 m (Sector B)</div>
-                </div>
-            </div>
-        </footer>
-    </div>
+            </footer>
+        </div>
     </div>
 
     <!-- UI Overlay for 2D Canvas Text labels (KP Markers, Stations) -->

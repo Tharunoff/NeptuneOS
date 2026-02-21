@@ -157,6 +157,41 @@ class SectorDataNode {
     }
 }
 
+// --------------------------------------------------------
+// 2.6. HAZARD INJECTION ENGINE (PHASE 3)
+// --------------------------------------------------------
+const HAZARD_PROFILES = {
+    'anchor_drag': { strain: 0.8, acoustic: 0.5, radius: 2, drift: 0.0, uncertainty_accel: 0.2 },
+    'corrosion': { strain: 0.1, pressure: 0.05, radius: 1, drift: 0.02, uncertainty_accel: 0.05 },
+    'gas_leak': { pressure: -0.2, acoustic: 0.6, temp: -0.4, radius: 3, drift: 0.05, uncertainty_accel: 0.15 },
+    'crude_rupture': { pressure: -0.8, flow: -0.7, acoustic: 0.9, radius: 5, drift: 0.1, uncertainty_accel: 0.5 },
+    'fiber_att': { flow: 0, strain: 0.1, radius: 1, drift: 0.05, uncertainty_accel: 0.1 }, // Fiber uses logical signal drop, mapped to strain here
+    'landslide': { tilt: 0.9, strain: 0.7, radius: 8, drift: 0.01, uncertainty_accel: 0.4 },
+    'turbine_crack': { acoustic: 0.4, strain: 0.3, radius: 2, drift: 0.03, uncertainty_accel: 0.1 },
+    'marine_collision': { acoustic: 0.6, strain: 0.2, radius: 1, drift: 0.0, uncertainty_accel: 0.2 },
+    'seismic': { acoustic: 0.5, tilt: 0.3, radius: 15, drift: -0.05, uncertainty_accel: 0.3 } // Negative drift means it resolves over time if no damage
+};
+
+class ActiveHazard {
+    constructor(id, type, assetId, kpPos, severityStr) {
+        this.id = id;
+        this.type = type;
+        this.assetId = assetId;
+        this.kp = kpPos;
+
+        const severityMult = { 'low': 0.5, 'medium': 1.0, 'high': 1.5, 'critical': 2.5 }[severityStr];
+        this.profile = JSON.parse(JSON.stringify(HAZARD_PROFILES[type])); // clone
+
+        // Scale impacts by severity
+        for (let key in this.profile) {
+            this.profile[key] *= severityMult;
+        }
+
+        this.startTime = Date.now();
+        this.active = true;
+    }
+}
+
 // Global state container
 const digitalTwinDB = {
     assets: {
@@ -166,6 +201,7 @@ const digitalTwinDB = {
         'power': [],
         'fiber': []
     },
+    active_hazards: [],
     sectors: {
         'A': new SectorDataNode('A', [0, 350], 'STATION_A'),
         'B': new SectorDataNode('B', [350, 1100], 'STATION_B'),
@@ -184,6 +220,8 @@ function determineSector(kp) {
 // --------------------------------------------------------
 // 3. LAYER GROUPS & ASSET GENERATION
 // --------------------------------------------------------
+const assetMeshes = {}; // Store references to update vertex colors later
+
 const layers = {
     gas: new THREE.Group(),
     crude: new THREE.Group(),
@@ -249,17 +287,29 @@ layers.bathymetry.add(bathymetryMesh);
 // 1.2 meters = 0.0012 km. If we use R=0.01 it's 10 meters thick.
 
 function createPipeline(curve, radiusKm, colorHex, group, assetId) {
-    const geo = new THREE.TubeGeometry(curve, CURVE_RESOLUTION * 2, radiusKm, 8, false);
+    // We need more radial segments to make vertex coloring smooth
+    const geo = new THREE.TubeGeometry(curve, CURVE_RESOLUTION * 2, radiusKm, 12, false);
+
+    // Setup Vertex Colors array (Default all White, so material color shows perfectly)
+    const vertexCount = geo.attributes.position.count;
+    const colors = new Float32Array(vertexCount * 3);
+    for (let i = 0; i < vertexCount * 3; i++) {
+        colors[i] = 1.0;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
     const mat = new THREE.MeshStandardMaterial({
         color: colorHex,
         roughness: 0.6,
-        metalness: 0.4
+        metalness: 0.4,
+        vertexColors: true // Phase 3: Enable vertex colors for hazard heatmap
     });
     const mesh = new THREE.Mesh(geo, mat);
 
-    // Tag the mesh for raycasting
-    mesh.userData = { assetId: assetId };
+    // Tag the mesh for raycasting and vertex updating
+    mesh.userData = { assetId: assetId, baseColorHex: colorHex };
     group.add(mesh);
+    assetMeshes[assetId] = mesh;
 
     // SILENTLY GENERATE 1KM DIGITAL SEGMENT NODES FOR THIS ASSET
     for (let kp = 0; kp < MAX_LENGTH; kp++) {
@@ -547,6 +597,169 @@ window.addEventListener('mousemove', (event) => {
     }
 });
 
+// UI Hazard Injection Hook
+document.getElementById('btn-inject').addEventListener('click', () => {
+    const asset = document.getElementById('hz-asset').value;
+    const kp = parseInt(document.getElementById('hz-kp').value) || 0;
+    const type = document.getElementById('hz-type').value;
+    const severity = document.getElementById('hz-severity').value;
+
+    const hazard = new ActiveHazard(`HZ_${Date.now()}`, type, asset, kp, severity);
+    digitalTwinDB.active_hazards.push(hazard);
+
+    // Log
+    const logEl = document.createElement('div');
+    logEl.className = 'log-entry';
+    logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
+                       <span class="warning-text">INJECTED: ${type.toUpperCase()}</span>
+                       <span>Asset: ${asset.toUpperCase()} @ KP ${kp} | ${severity.toUpperCase()}</span>`;
+    document.getElementById('event-log').prepend(logEl);
+});
+
+// --------------------------------------------------------
+// 2.7. DIGITAL TWIN SIMULATION TICK (2Hz)
+// --------------------------------------------------------
+const tmpColor = new THREE.Color();
+
+function updateVertexColors(assetId) {
+    const mesh = assetMeshes[assetId];
+    if (!mesh) return;
+
+    const geo = mesh.geometry;
+    const colorAttr = geo.attributes.color;
+    const segments = digitalTwinDB.assets[assetId];
+    const baseColorHex = mesh.userData.baseColorHex;
+
+    // We have 1900 segments (KPs). The tube has CURVE_RESOLUTION * 2 = 400 linear divisions.
+    // So 1900 KPs map to 400 linear tube loops.
+    // 1 linear loop = 1900/400 = 4.75 KPs
+    // It has 12 radial segments.
+    // Each linear step contains 12 vertices.
+
+    const linearDivisions = CURVE_RESOLUTION * 2;
+    const radialDivisions = 12;
+    const kpPerDiv = MAX_LENGTH / linearDivisions;
+
+    for (let i = 0; i <= linearDivisions; i++) {
+        const kpApproximation = Math.floor(i * kpPerDiv);
+        const segment = segments[Math.min(kpApproximation, MAX_LENGTH - 1)];
+        const u = segment.uncertainty_buffer;
+
+        // Heatmap scale:
+        // u = 0.0 -> Base Color
+        // u = 0.4 -> Amber (0xffaa00)
+        // u = 0.7 -> Orange (0xff5500)
+        // u = 1.0 -> Red (0xff0000)
+
+        tmpColor.setHex(baseColorHex);
+        if (u > 0.05) {
+            let heatColor = 0xffaa00;
+            if (u > 0.7) heatColor = 0xff0000;
+            else if (u > 0.4) heatColor = 0xff5500;
+
+            // Lerp based on intensity
+            tmpColor.lerp(new THREE.Color(heatColor), Math.min(u, 1.0));
+        }
+
+        // Apply to all radial vertices at this linear step
+        for (let j = 0; j <= radialDivisions; j++) {
+            const idx = (i * (radialDivisions + 1) + j) * 3;
+            // Handle array bounds
+            if (idx + 2 < colorAttr.array.length) {
+                colorAttr.array[idx] = tmpColor.r;
+                colorAttr.array[idx + 1] = tmpColor.g;
+                colorAttr.array[idx + 2] = tmpColor.b;
+            }
+        }
+    }
+
+    colorAttr.needsUpdate = true;
+}
+
+function simulateDigitalTwinTick() {
+    // 1. Process Hazards
+    digitalTwinDB.active_hazards.forEach(hazard => {
+        const segments = digitalTwinDB.assets[hazard.assetId];
+
+        // Propagate across radius
+        for (let i = -hazard.profile.radius; i <= hazard.profile.radius; i++) {
+            const targetKp = hazard.kp + i;
+            if (targetKp >= 0 && targetKp < MAX_LENGTH) {
+                const seg = segments[targetKp];
+                const sc = seg.sensor_cluster;
+
+                // Exponential decay of impact based on distance
+                const distanceFactor = Math.exp(-Math.abs(i) / (hazard.profile.radius / 2));
+
+                // Apply physical drifts
+                if (hazard.profile.strain) sc.strain.current += (hazard.profile.drift * hazard.profile.strain * distanceFactor);
+                if (hazard.profile.pressure) sc.pressure.current += (hazard.profile.drift * hazard.profile.pressure * distanceFactor);
+                if (hazard.profile.acoustic) sc.acoustic.current += (hazard.profile.drift * hazard.profile.acoustic * distanceFactor);
+                if (hazard.profile.tilt) sc.tilt.current += (hazard.profile.drift * hazard.profile.tilt * distanceFactor);
+
+                // Increase uncertainty buffer
+                seg.uncertainty_buffer += (hazard.profile.uncertainty_accel * distanceFactor) * 0.1; // 0.1 delta per tick
+                if (seg.uncertainty_buffer > 1.0) seg.uncertainty_buffer = 1.0;
+
+                if (seg.uncertainty_buffer > 0.85 && seg.health_state === 'healthy') {
+                    seg.health_state = 'critical risk';
+
+                    // Log to UI strictly once per segment
+                    const logEl = document.createElement('div');
+                    logEl.className = 'log-entry';
+                    logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
+                                       <span class="critical-text">CRITICAL STRAIN DETECTED</span>
+                                       <span>Asset: ${hazard.assetId.toUpperCase()} @ KP ${targetKp}. Review U-buffer.</span>`;
+                    document.getElementById('event-log').prepend(logEl);
+                }
+            }
+        }
+    });
+
+    // 2. Update Sector Stability
+    let requiresVisualUpdate = new Set();
+    Object.keys(digitalTwinDB.sectors).forEach(secKey => {
+        const sector = digitalTwinDB.sectors[secKey];
+        let totalU = 0;
+        let count = 0;
+
+        ['gas_a', 'gas_b', 'crude', 'power', 'fiber'].forEach(assetId => {
+            const segments = digitalTwinDB.assets[assetId];
+            for (let kp = sector.kp_range[0]; kp < sector.kp_range[1]; kp++) {
+                if (segments[kp].uncertainty_buffer > 0.01) {
+                    totalU += segments[kp].uncertainty_buffer;
+                    requiresVisualUpdate.add(assetId);
+                }
+                count++;
+            }
+        });
+
+        if (count > 0) {
+            sector.aggregated_variance = (totalU / count);
+            sector.stability_index = 100.0 - (sector.aggregated_variance * 100);
+            if (sector.stability_index < 0) sector.stability_index = 0;
+
+            // Sync to UI panel if it exists
+            const domEl = document.getElementById(`sector-sec-${secKey.toLowerCase()}`);
+            if (domEl) {
+                domEl.innerText = `${sector.stability_index.toFixed(1)}%`;
+                if (sector.stability_index < 50) {
+                    domEl.className = 'metric-value critical-text';
+                } else if (sector.stability_index < 90) {
+                    domEl.className = 'metric-value warning-text';
+                } else {
+                    domEl.className = 'metric-value nominal-text';
+                }
+            }
+        }
+    });
+
+    // 3. Trigger Visual Mesh updates
+    requiresVisualUpdate.forEach(assetId => updateVertexColors(assetId));
+}
+
+// Tick at 2Hz for performance
+setInterval(simulateDigitalTwinTick, 500);
 
 // --------------------------------------------------------
 // 6. CAMERA NAVIGATION LOGIC
