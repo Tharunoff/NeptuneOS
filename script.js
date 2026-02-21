@@ -192,6 +192,39 @@ class ActiveHazard {
     }
 }
 
+// --------------------------------------------------------
+// 2.7. AUV PHYSICS & MISSION ENGINE (PHASE 5)
+// --------------------------------------------------------
+class AUVNode {
+    constructor(id, homeStationKp) {
+        this.id = id;
+        this.home_kp = homeStationKp;
+        this.current_kp = homeStationKp;
+        this.target_kp = null;
+        this.target_asset = null;
+
+        // Physics State
+        this.depth = getDepthKmAtKP(homeStationKp); // Starts at station depth
+        this.velocity_horizontal = 0; // knots (1 knot = 0.5144 m/s)
+        this.velocity_vertical = 0;   // m/s
+
+        // Battery Math: 100 kWh battery = 360,000,000 Joules
+        this.battery_max_joules = 360000000;
+        this.battery_joules = this.battery_max_joules;
+        this.base_power_watts = 500; // Hotel load (computers, basic sensors)
+
+        // State Machine
+        // IDLE -> UNDOCKING -> TRANSIT_VERTICAL -> TRANSIT_HORIZONTAL -> ON_SITE_SCAN -> REPORTING -> RETURN
+        this.state = 'IDLE';
+        this.scan_phase = 0;
+        this.scan_timer = 0;
+    }
+
+    get battery_percent() {
+        return (this.battery_joules / this.battery_max_joules) * 100;
+    }
+}
+
 // Global state container
 const digitalTwinDB = {
     assets: {
@@ -202,6 +235,7 @@ const digitalTwinDB = {
         'fiber': []
     },
     active_hazards: [],
+    active_auvs: [],
     sectors: {
         'A': new SectorDataNode('A', [0, 350], 'STATION_A'),
         'B': new SectorDataNode('B', [350, 1100], 'STATION_B'),
@@ -616,6 +650,160 @@ document.getElementById('btn-inject').addEventListener('click', () => {
     document.getElementById('event-log').prepend(logEl);
 });
 
+// AUV Dispatch Logic
+const btnDispatch = document.getElementById('btn-dispatch-auv');
+let currentCriticalTarget = null; // { assetId, kp }
+
+btnDispatch.addEventListener('click', () => {
+    if (!currentCriticalTarget) return;
+
+    // Determine nearest station based on sector
+    const sectorId = determineSector(currentCriticalTarget.kp);
+    const stationKPs = { 'A': 175, 'B': 725, 'C': 1325, 'D': 1725 };
+    const homeKp = stationKPs[sectorId];
+
+    // Create AUV mathematically
+    const auv = new AUVNode(`AUV-${sectorId}-INV`, homeKp);
+    auv.target_kp = currentCriticalTarget.kp;
+    auv.target_asset = currentCriticalTarget.assetId;
+    auv.state = 'UNDOCKING';
+
+    digitalTwinDB.active_auvs.push(auv);
+
+    const logEl = document.createElement('div');
+    logEl.className = 'log-entry';
+    logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
+                       <span style="color: #00f0ff;">ACTION: MISSION DISPATCHED</span>
+                       <span>${auv.id} from Station ${sectorId} to KP ${auv.target_kp}</span>`;
+    document.getElementById('event-log').prepend(logEl);
+
+    // Hide dispatch button now that it is sent
+    btnDispatch.classList.add('hidden');
+    document.getElementById('auv-telemetry').classList.remove('hidden');
+});
+
+// --- Phase 6: Human Approval Gate & Repair Dispatch ---
+document.getElementById('btn-approve-multi').addEventListener('click', () => {
+    document.getElementById('human-approval-modal').classList.add('hidden');
+    if (window.pendingRepairRec && window.pendingRepairTarget) {
+        triggerRepairMission(window.pendingRepairRec, window.pendingRepairTarget);
+    }
+});
+document.getElementById('btn-escalate-shutdown').addEventListener('click', () => {
+    document.getElementById('human-approval-modal').classList.add('hidden');
+    const logEl = document.createElement('div');
+    logEl.className = 'log-entry';
+    logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
+                       <span class="critical-text">FULL SHUTDOWN ESCALATED</span>
+                       <span>System halting all flow.</span>`;
+    document.getElementById('event-log').prepend(logEl);
+});
+document.getElementById('btn-manual-override').addEventListener('click', () => {
+    document.getElementById('human-approval-modal').classList.add('hidden');
+    const logEl = document.createElement('div');
+    logEl.className = 'log-entry';
+    logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
+                       <span class="warning-text">MANUAL OVERRIDE</span>
+                       <span>Monitoring only. No repair dispatched.</span>`;
+    document.getElementById('event-log').prepend(logEl);
+});
+
+function triggerRepairMission(rec, target) {
+    if (rec.isolation_required) {
+        simulateIsolation(target);
+    }
+    dispatchRepairAUV(rec, target);
+}
+
+function simulateIsolation(target) {
+    const seg = digitalTwinDB.assets[target.assetId][target.kp];
+    seg.isolation_active = true;
+    seg.isolation_timer = 0;
+    seg.original_pressure = seg.sensor_cluster.pressure.current;
+
+    digitalTwinDB.active_isolations = digitalTwinDB.active_isolations || [];
+    if (!digitalTwinDB.active_isolations.includes(seg)) {
+        digitalTwinDB.active_isolations.push(seg);
+    }
+
+    const logEl = document.createElement('div');
+    logEl.className = 'log-entry';
+    logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
+                       <span class="warning-text">ISOLATION INITIATED</span>
+                       <span>Valves closing for ${target.assetId.toUpperCase()} around KP ${target.kp}</span>`;
+    document.getElementById('event-log').prepend(logEl);
+}
+
+function simulatePressureReintroduction(seg) {
+    seg.isolation_active = false;
+    seg.reintro_active = true;
+    seg.reintro_timer = 0;
+
+    digitalTwinDB.active_isolations = digitalTwinDB.active_isolations || [];
+    if (!digitalTwinDB.active_isolations.includes(seg)) {
+        digitalTwinDB.active_isolations.push(seg);
+    }
+
+    const logEl = document.createElement('div');
+    logEl.className = 'log-entry';
+    logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
+                       <span class="nominal-text">PRESSURE REINTRODUCTION</span>
+                       <span>Gradual flow restoration at KP ${seg.kp_start}.</span>`;
+    document.getElementById('event-log').prepend(logEl);
+}
+
+function dispatchRepairAUV(rec, target) {
+    let sectorId = 'A';
+    if (target.kp <= 350) sectorId = 'A';
+    else if (target.kp <= 1100) sectorId = 'B';
+    else if (target.kp <= 1550) sectorId = 'C';
+    else sectorId = 'D';
+
+    const stationKPs = { 'A': 175, 'B': 725, 'C': 1325, 'D': 1725 };
+    const homeKp = stationKPs[sectorId];
+
+    // Primary Repair AUV
+    const toolAuv = new AUVNode(`TOOL-AUV-${sectorId}-1`, homeKp);
+    toolAuv.target_kp = target.kp;
+    toolAuv.target_asset = target.assetId;
+    toolAuv.state = 'UNDOCKING';
+    toolAuv.mission_type = 'REPAIR';
+    toolAuv.repair_rec = rec;
+
+    digitalTwinDB.active_auvs.push(toolAuv);
+
+    const logEl = document.createElement('div');
+    logEl.className = 'log-entry';
+    logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
+                       <span style="color: #00f0ff;">REPAIR DISPATCH</span>
+                       <span>${toolAuv.id} sent to ${target.assetId.toUpperCase()} @ KP ${target.kp}</span>`;
+    document.getElementById('event-log').prepend(logEl);
+
+    // Multi-AUV logic
+    if (rec.repair_type === "Emergency Multi-AUV Repair" || rec.repair_type === "Isolation + Structural Repair") {
+        const supportAuv = new AUVNode(`TOOL-AUV-${sectorId}-2`, homeKp);
+        supportAuv.target_kp = target.kp;
+        supportAuv.target_asset = target.assetId;
+        supportAuv.state = 'UNDOCKING';
+        supportAuv.mission_type = 'SUPPORT';
+        digitalTwinDB.active_auvs.push(supportAuv);
+
+        const logEl2 = document.createElement('div');
+        logEl2.className = 'log-entry';
+        logEl2.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
+                           <span style="color: #00f0ff;">SUPPORT DISPATCH</span>
+                           <span>${supportAuv.id} deployed for Multi-AUV coordination.</span>`;
+        document.getElementById('event-log').prepend(logEl2);
+    }
+}
+
+// Time Dilation state
+let SIM_TIME_DILATION = 1000;
+document.getElementById('time-dilation').addEventListener('input', (e) => {
+    SIM_TIME_DILATION = parseInt(e.target.value);
+    document.getElementById('dilation-val').innerText = `${SIM_TIME_DILATION}x`;
+});
+
 // --------------------------------------------------------
 // 2.7. DIGITAL TWIN SIMULATION TICK (2Hz)
 // --------------------------------------------------------
@@ -677,6 +865,42 @@ function updateVertexColors(assetId) {
 }
 
 function simulateDigitalTwinTick() {
+    // 0. Process Isolations & Pressure Reintroduction
+    digitalTwinDB.active_isolations = digitalTwinDB.active_isolations || [];
+    digitalTwinDB.active_isolations.forEach(seg => {
+        if (seg.isolation_active) {
+            seg.isolation_timer += 0.5 * SIM_TIME_DILATION;
+            if (seg.sensor_cluster.pressure.current > seg.original_pressure * 0.1) {
+                seg.sensor_cluster.pressure.current -= 5.0 * (0.5 * SIM_TIME_DILATION);
+            }
+        }
+        if (seg.reintro_active) {
+            seg.reintro_timer += 0.5 * SIM_TIME_DILATION;
+            if (seg.sensor_cluster.pressure.current < seg.original_pressure) {
+                seg.sensor_cluster.pressure.current += 2.0 * (0.5 * SIM_TIME_DILATION);
+                if (Math.random() > 0.999) { // artificial spike
+                    seg.reintro_active = false;
+                    seg.isolation_active = true;
+                    const logEl = document.createElement('div');
+                    logEl.className = 'log-entry';
+                    logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
+                                      <span class="critical-text">RESTORE ABORTED</span>
+                                      <span>Abnormal spike at KP ${Math.floor(seg.kp_start)}. Re-isolating.</span>`;
+                    document.getElementById('event-log').prepend(logEl);
+                }
+            } else {
+                seg.reintro_active = false;
+                const logEl = document.createElement('div');
+                logEl.className = 'log-entry';
+                logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
+                                   <span class="nominal-text">PRESSURE STABILIZED</span>
+                                   <span>Flow nominal at KP ${Math.floor(seg.kp_start)}.</span>`;
+                document.getElementById('event-log').prepend(logEl);
+                digitalTwinDB.active_isolations = digitalTwinDB.active_isolations.filter(s => s !== seg);
+            }
+        }
+    });
+
     // 1. Process Hazards
     digitalTwinDB.active_hazards.forEach(hazard => {
         const segments = digitalTwinDB.assets[hazard.assetId];
@@ -711,6 +935,12 @@ function simulateDigitalTwinTick() {
                                        <span class="critical-text">CRITICAL STRAIN DETECTED</span>
                                        <span>Asset: ${hazard.assetId.toUpperCase()} @ KP ${targetKp}. Review U-buffer.</span>`;
                     document.getElementById('event-log').prepend(logEl);
+
+                    // Show AUV Dispatch Button if not already active
+                    if (digitalTwinDB.active_auvs.length === 0) {
+                        currentCriticalTarget = { assetId: hazard.assetId, kp: targetKp };
+                        document.getElementById('btn-dispatch-auv').classList.remove('hidden');
+                    }
                 }
             }
         }
@@ -760,6 +990,336 @@ function simulateDigitalTwinTick() {
 
 // Tick at 2Hz for performance
 setInterval(simulateDigitalTwinTick, 500);
+
+// --------------------------------------------------------
+// 2.8. AUV PHYSICS LOOP (10Hz)
+// --------------------------------------------------------
+function simulateAUVPhysicsTick() {
+    const dtReal = 0.1; // 10Hz = 0.1 seconds real-time
+    const dtSim = dtReal * SIM_TIME_DILATION; // Simulated seconds passed this tick
+
+    // We update UI elements directly from the array for simplicity
+    digitalTwinDB.active_auvs.forEach(auv => {
+
+        let powerDrawWatts = auv.base_power_watts;
+
+        // --- State Machine ---
+        if (auv.state === 'UNDOCKING') {
+            auv.scan_timer += dtSim;
+            if (auv.scan_timer > 60) { // Takes 60 physical seconds to undock
+                auv.state = 'TRANSIT_VERTICAL';
+                auv.scan_timer = 0;
+            }
+            powerDrawWatts += 1000; // Power-up heavy draw
+        }
+        else if (auv.state === 'TRANSIT_VERTICAL') {
+            const targetDepth = getDepthKmAtKP(auv.current_kp);
+            const diff = targetDepth - auv.depth;
+            const dir = Math.sign(diff);
+
+            // Vertical speed 1 m/s (0.001 km/s)
+            auv.velocity_vertical = dir * 1.0;
+            const distToMove = (auv.velocity_vertical * dtSim) / 1000; // km
+
+            if (Math.abs(diff) < Math.abs(distToMove)) {
+                auv.depth = targetDepth;
+                auv.velocity_vertical = 0;
+                auv.state = 'TRANSIT_HORIZONTAL';
+            } else {
+                auv.depth += distToMove;
+            }
+            powerDrawWatts += 2500; // Ballast pump energy
+        }
+        else if (auv.state === 'TRANSIT_HORIZONTAL') {
+            auv.velocity_horizontal = 4.5; // Cruise at 4.5 knots
+            const speedMs = auv.velocity_horizontal * 0.5144;
+
+            // Move towards target KP (1 KP = 1 km roughly)
+            const diff = auv.target_kp - auv.current_kp;
+            const dir = Math.sign(diff);
+
+            const distToMoveKm = (speedMs * dtSim) / 1000;
+
+            if (Math.abs(diff) < Math.abs(distToMoveKm)) {
+                auv.current_kp = auv.target_kp;
+                auv.velocity_horizontal = 0;
+
+                if (auv.current_kp === auv.home_kp) {
+                    auv.state = 'IDLE';
+                }
+                else if (auv.mission_type === 'REPAIR' || auv.mission_type === 'SUPPORT') {
+                    auv.state = 'ON_SITE_REPAIR';
+                    auv.repair_phase = 1;
+                    auv.scan_timer = 0;
+                } else {
+                    auv.state = 'ON_SITE_SCAN';
+                    auv.scan_timer = 0;
+                }
+            } else {
+                auv.current_kp += dir * distToMoveKm;
+                // Follow the contour depth perfectly along the spline
+                auv.depth = getDepthKmAtKP(auv.current_kp);
+            }
+
+            // Hydrodynamic drag power simplified approximation
+            powerDrawWatts += (200 * speedMs * speedMs); // roughly 1kW at cruise
+        }
+        else if (auv.state === 'ON_SITE_SCAN') {
+            auv.velocity_horizontal = 1.0; // Slow down to 1 knot
+            auv.scan_timer += dtSim;
+            powerDrawWatts += 4000; // Active sonar/scanners
+
+            if (auv.scan_timer > 300) { // 5 minutes scan
+                auv.state = 'REPORTING';
+                auv.scan_timer = 0;
+            }
+        }
+        else if (auv.state === 'REPORTING') {
+            auv.scan_timer += dtSim;
+            powerDrawWatts += 1500; // Comms array
+
+            if (auv.scan_timer > 60) {
+                // Tell the digital twin we confirmed it
+                const seg = digitalTwinDB.assets[auv.target_asset][Math.floor(auv.current_kp)];
+                if (seg && seg.health_state !== "confirmed anomaly") {
+                    seg.health_state = "confirmed anomaly";
+
+                    // Phase 6: DAMAGE SEVERITY EVALUATION
+                    let integrity = 100 - (seg.uncertainty_buffer * 100);
+                    if (seg.uncertainty_buffer > 0.85) {
+                        integrity = 15 + Math.random() * 20; // < 40%
+                    } else if (seg.uncertainty_buffer > 0.6) {
+                        integrity = 41 + Math.random() * 15; // 40-60%
+                    } else if (seg.uncertainty_buffer > 0.3) {
+                        integrity = 61 + Math.random() * 20; // 60-85%
+                    } else {
+                        integrity = 86 + Math.random() * 10; // > 85%
+                    }
+                    seg.structural_integrity_percent = integrity;
+
+                    const rec = {
+                        anomaly_id: `ANOM-${Date.now()}`,
+                        severity_class: '',
+                        isolation_required: false,
+                        repair_type: '',
+                        estimated_repair_duration: 0,
+                        required_tools: [],
+                        human_approval_required: false
+                    };
+
+                    let actionLabel = "";
+                    if (integrity > 85) {
+                        rec.severity_class = "Minor";
+                        rec.repair_type = "None";
+                        actionLabel = "Monitor Only";
+                    } else if (integrity >= 60) {
+                        rec.severity_class = "Moderate";
+                        rec.repair_type = "Preventive Clamp Repair";
+                        rec.required_tools = ["Mechanical Clamp"];
+                        rec.estimated_repair_duration = 1800; // 30 mins
+                        actionLabel = "Preventive Clamp Repair";
+                    } else if (integrity >= 40) {
+                        rec.severity_class = "Severe";
+                        rec.isolation_required = true;
+                        rec.repair_type = "Isolation + Structural Repair";
+                        rec.required_tools = ["Structural Clamp", "Welding Tools"];
+                        rec.estimated_repair_duration = 3600; // 60 mins
+                        actionLabel = "Isolation + Structural Repair";
+                    } else {
+                        rec.severity_class = "Critical";
+                        rec.isolation_required = true;
+                        rec.repair_type = "Emergency Multi-AUV Repair";
+                        rec.required_tools = ["Heavy Structural Clamp", "Sealing Kit"];
+                        rec.human_approval_required = true;
+                        rec.estimated_repair_duration = 7200; // 120 mins
+                        actionLabel = "Critical Event (Human Approval Required)";
+                    }
+
+                    const logEl = document.createElement('div');
+                    logEl.className = 'log-entry';
+                    logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
+                                       <span class="${rec.severity_class === 'Critical' ? 'critical-text' : 'warning-text'}">ASSESSMENT COMPLETE</span>
+                                       <span>Integrity: ${integrity.toFixed(1)}% | Action: ${actionLabel}</span>`;
+                    document.getElementById('event-log').prepend(logEl);
+
+                    if (rec.human_approval_required) {
+                        // Phase 7: Add to Human Oversight Panel
+                        const oversightList = document.getElementById('oversight-list');
+                        const emptyMsg = oversightList.querySelector('div');
+                        if (emptyMsg && emptyMsg.innerText.includes('No pending')) {
+                            oversightList.innerHTML = '';
+                        }
+
+                        const oversightId = `ov-${Date.now()}`;
+                        const ovItem = document.createElement('div');
+                        ovItem.id = oversightId;
+                        ovItem.style.cssText = "background: rgba(187,170,255,0.1); border-left: 3px solid #bbaaff; padding: 0.5rem; border-radius: 4px; font-family: var(--font-log); font-size: 0.75rem; position: relative;";
+                        ovItem.innerHTML = `
+                            <div style="color:var(--text-primary); margin-bottom: 0.2rem;">REQ: ${rec.repair_type.toUpperCase()}</div>
+                            <div style="color:var(--text-secondary); margin-bottom: 0.5rem;">${auv.target_asset.toUpperCase()} @ KP ${Math.floor(auv.current_kp)} | Integrity: <span class="critical-text">${integrity.toFixed(1)}%</span></div>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <button class="btn" style="flex:1; padding: 0.2rem; font-size:0.65rem; border-color:#00ff88; color:#00ff88;" onclick="approveOversight('${oversightId}')">APPROVE</button>
+                                <button class="btn" style="flex:1; padding: 0.2rem; font-size:0.65rem; border-color:#ff3b3b; color:#ff3b3b;" onclick="escalateOversight('${oversightId}')">ESCALATE</button>
+                            </div>
+                        `;
+                        // Store data for the handlers
+                        ovItem.dataset.rec = JSON.stringify(rec);
+                        ovItem.dataset.asset = auv.target_asset;
+                        ovItem.dataset.kp = Math.floor(auv.current_kp);
+
+                        oversightList.appendChild(ovItem);
+
+                        // Update counter
+                        const countEl = document.getElementById('oversight-count');
+                        countEl.innerText = parseInt(countEl.innerText || 0) + 1;
+
+                        const modal = document.getElementById('human-approval-modal');
+                        document.getElementById('approval-details').innerHTML = `
+                            <strong>Asset:</strong> ${auv.target_asset.toUpperCase()} @ KP ${Math.floor(auv.current_kp)}<br>
+                            <strong>Structural Integrity:</strong> <span class="critical-text">${integrity.toFixed(1)}%</span><br>
+                            <strong>Repair Type:</strong> ${rec.repair_type}<br>
+                            <strong>Required Tools:</strong> ${rec.required_tools.join(", ")}
+                        `;
+                        modal.classList.remove('hidden');
+
+                        window.pendingRepairRec = rec;
+                        window.pendingRepairTarget = { assetId: auv.target_asset, kp: Math.floor(auv.current_kp) };
+                    } else if (rec.repair_type !== "None") {
+                        triggerRepairMission(rec, { assetId: auv.target_asset, kp: Math.floor(auv.current_kp) });
+                    }
+                }
+
+                // Done reporting, return home
+                auv.target_kp = auv.home_kp;
+                auv.state = 'TRANSIT_HORIZONTAL';
+                auv.scan_timer = 0;
+            }
+        }
+        else if (auv.state === 'ON_SITE_REPAIR') {
+            auv.velocity_horizontal = 0; // Station keeping
+            auv.scan_timer += dtSim;
+
+            const seg = digitalTwinDB.assets[auv.target_asset][Math.floor(auv.current_kp)];
+
+            if (auv.mission_type === 'SUPPORT') {
+                powerDrawWatts += 2000; // stabilization assist
+                const primaryAuv = digitalTwinDB.active_auvs.find(a => a.mission_type === 'REPAIR' && a.target_kp === auv.target_kp && a.target_asset === auv.target_asset && a.state === 'ON_SITE_REPAIR');
+                if (!primaryAuv) {
+                    auv.target_kp = auv.home_kp;
+                    auv.state = 'TRANSIT_HORIZONTAL';
+                    auv.mission_type = null;
+                }
+            } else if (auv.mission_type === 'REPAIR') {
+                powerDrawWatts += 4500; // Tool usage
+
+                // Phase 1: Structural assessment
+                if (auv.repair_phase === 1 && auv.scan_timer > 30) {
+                    auv.repair_phase = 2; auv.scan_timer = 0;
+                    if (seg) seg.health_state = "repair - stabilize";
+                }
+                // Phase 2: Position stabilization
+                else if (auv.repair_phase === 2 && auv.scan_timer > 30) {
+                    auv.repair_phase = 3; auv.scan_timer = 0;
+                    if (seg) seg.health_state = "repair - clamp align";
+                }
+                // Phase 3: Clamp alignment
+                else if (auv.repair_phase === 3 && auv.scan_timer > 40) {
+                    auv.repair_phase = 4; auv.scan_timer = 0;
+                    if (seg) { seg.structural_integrity_percent = Math.max(seg.structural_integrity_percent, 50); seg.health_state = "repair - clamp deploy"; }
+                }
+                // Phase 4: Mechanical clamp deployment
+                else if (auv.repair_phase === 4 && auv.scan_timer > 60) {
+                    auv.repair_phase = 5; auv.scan_timer = 0;
+                    if (seg) { seg.structural_integrity_percent = 85; seg.health_state = "repair - seal test"; }
+                }
+                // Phase 5: Seal pressure test
+                else if (auv.repair_phase === 5 && auv.scan_timer > 40) {
+                    auv.repair_phase = 6; auv.scan_timer = 0;
+                    if (seg) { seg.structural_integrity_percent = 92; seg.health_state = "repair - check"; }
+                }
+                // Phase 6: Structural reinforcement check
+                else if (auv.repair_phase === 6 && auv.scan_timer > 30) {
+                    auv.state = 'REPORTING_REPAIR';
+                    auv.scan_timer = 0;
+                    if (seg) seg.structural_integrity_percent = 96;
+                }
+            }
+        }
+        else if (auv.state === 'REPORTING_REPAIR') {
+            auv.scan_timer += dtSim;
+            powerDrawWatts += 1500;
+            if (auv.scan_timer > 60) {
+                auv.target_kp = auv.home_kp;
+                auv.state = 'TRANSIT_HORIZONTAL';
+                auv.scan_timer = 0;
+
+                const seg = digitalTwinDB.assets[auv.target_asset][Math.floor(auv.current_kp)];
+                if (seg) {
+                    if (seg.structural_integrity_percent > 90) {
+                        seg.health_state = "Repaired & Stabilized";
+                        seg.uncertainty_buffer = 0.05; // Reset uncertainty
+                        seg.last_repair_timestamp = Date.now();
+                        seg.anomaly_resolved = true;
+
+                        const logEl = document.createElement('div');
+                        logEl.className = 'log-entry';
+                        logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
+                                           <span class="nominal-text">REPAIR SUCCESS</span>
+                                           <span>Sector ${determineSector(seg.kp_start)} - ${auv.target_asset.toUpperCase()} @ KP ${Math.floor(auv.current_kp)}</span>`;
+                        document.getElementById('event-log').prepend(logEl);
+
+                        if (auv.repair_rec && auv.repair_rec.isolation_required) {
+                            simulatePressureReintroduction(seg);
+                        }
+
+                        // Clear related hazards
+                        digitalTwinDB.active_hazards = digitalTwinDB.active_hazards.filter(h => !(h.assetId === auv.target_asset && Math.abs(h.kp - auv.current_kp) <= h.profile.radius));
+                    } else {
+                        seg.health_state = "Repair Incomplete — Human Intervention Recommended";
+                    }
+                }
+                auv.mission_type = null;
+                auv.repair_rec = null;
+            }
+        }
+        else if (auv.state === 'IDLE') {
+            if (auv.battery_joules < auv.battery_max_joules) {
+                auv.battery_joules += 15000 * dtSim; // 15kW docking array charging
+                if (auv.battery_joules > auv.battery_max_joules) auv.battery_joules = auv.battery_max_joules;
+            }
+        }
+
+        // --- Energy Math ---
+        // Joules = Watts * Seconds
+        const energyConsumedJ = powerDrawWatts * dtSim;
+        auv.battery_joules -= energyConsumedJ;
+
+        // --- Update UI ---
+        // --- Update UI ---
+        document.getElementById('auv-id').innerText = auv.id;
+        document.getElementById('auv-state').innerText = auv.state + (auv.repair_phase ? ` (Phase ${auv.repair_phase})` : '');
+        document.getElementById('auv-battery').innerText = auv.battery_percent.toFixed(2) + '%';
+
+        const targetD = auv.target_kp ? getDepthKmAtKP(auv.target_kp) * 1000 : 0;
+        document.getElementById('auv-depth').innerText = `${Math.floor(auv.depth * 1000)}m`;
+        document.getElementById('auv-speed').innerText = auv.velocity_horizontal.toFixed(1);
+
+        if (auv.target_kp !== null && auv.state.includes('TRANSIT')) {
+            const dist = Math.abs(auv.target_kp - auv.current_kp); // in KM
+            document.getElementById('auv-dist').innerText = `${dist.toFixed(1)} km`;
+
+            const speed = (auv.velocity_horizontal * 0.5144) || 0.1;
+            const etaRealSeconds = (dist * 1000) / speed;
+            const etaSimSeconds = etaRealSeconds / SIM_TIME_DILATION;
+            document.getElementById('auv-eta').innerText = `~${Math.ceil(etaSimSeconds)}s`;
+        } else {
+            document.getElementById('auv-dist').innerText = `--`;
+            document.getElementById('auv-eta').innerText = `--`;
+        }
+    });
+}
+
+setInterval(simulateAUVPhysicsTick, 100);
 
 // --------------------------------------------------------
 // 6. CAMERA NAVIGATION LOGIC
@@ -851,3 +1411,227 @@ function animate() {
     renderer.render(scene, camera);
 }
 animate();
+
+// --------------------------------------------------------
+// 8. PHASE 7: MASTER DASHBOARD METRICS LOGIC
+// --------------------------------------------------------
+let sysConfidence = 99.9;
+
+function updateDashboardMetrics() {
+    // Top Bar
+    const now = new Date();
+    document.getElementById('top-time').innerText = now.toISOString().split('T')[1].slice(0, 8);
+    document.getElementById('top-auv-active').innerText = digitalTwinDB.active_auvs.length;
+    document.getElementById('top-isolations').innerText = digitalTwinDB.active_isolations ? digitalTwinDB.active_isolations.length : 0;
+
+    // Global Stats
+    let totalAnomalies = 0;
+    let totalStability = 0;
+    let assessedSegments = 0;
+    let totalUncertainty = 0;
+    let hazardCount = digitalTwinDB.active_hazards.length;
+
+    Object.keys(digitalTwinDB.assets).forEach(asset => {
+        digitalTwinDB.assets[asset].forEach(seg => {
+            totalStability += seg.structural_integrity_percent || 100;
+            totalUncertainty += seg.uncertainty_buffer;
+            if (seg.health_state !== 'healthy' && !seg.anomaly_resolved) totalAnomalies++;
+            assessedSegments++;
+        });
+    });
+
+    const avgStability = (totalStability / assessedSegments).toFixed(1);
+    const avgUncertainty = (totalUncertainty / assessedSegments).toFixed(3);
+    document.getElementById('val-global-stability').innerText = `${avgStability}%`;
+    document.getElementById('val-active-anomalies').innerText = totalAnomalies;
+    document.getElementById('val-active-missions').innerText = digitalTwinDB.active_auvs.length;
+    document.getElementById('val-avg-uncertainty').innerText = avgUncertainty;
+
+    let confidenceTarget = 100 - (totalAnomalies * 0.5) - (hazardCount * 2);
+    if (confidenceTarget < 20) confidenceTarget = 20;
+    sysConfidence = sysConfidence * 0.9 + confidenceTarget * 0.1;
+    document.getElementById('val-confidence').innerText = `${sysConfidence.toFixed(1)}%`;
+
+    // System Health
+    document.getElementById('val-sim-hazards').innerText = hazardCount;
+
+    // Comms & Latency
+    const latency = Math.floor(12 + Math.random() * 5 + (hazardCount * 15));
+    document.getElementById('val-latency').innerText = latency;
+    const commsInt = latency > 100 ? 85 : 100;
+    document.getElementById('val-comms-int').innerText = `${commsInt}%`;
+
+    // Status changes
+    const sysStatus = document.getElementById('sys-status');
+    if (totalAnomalies > 5 || (digitalTwinDB.active_isolations && digitalTwinDB.active_isolations.length > 0)) {
+        sysStatus.innerHTML = `SYS: CRITICAL <span class="indicator" style="background-color: var(--color-critical); box-shadow: 0 0 8px var(--color-critical-glow);"></span>`;
+        sysStatus.style.color = "var(--color-critical)";
+    } else if (totalAnomalies > 0 || hazardCount > 0) {
+        sysStatus.innerHTML = `SYS: ALERT <span class="indicator" style="background-color: var(--color-warning); box-shadow: 0 0 8px var(--color-warning-glow);"></span>`;
+        sysStatus.style.color = "var(--color-warning)";
+    } else {
+        sysStatus.innerHTML = `SYS: NOMINAL <span class="indicator"></span>`;
+        sysStatus.style.color = "var(--text-primary)";
+    }
+
+    // Sector Control logic
+    updateSectorControl();
+
+    // Bio-Algae Update
+    updateBioAlgae();
+}
+
+let currentSelectedSector = null;
+
+function updateSectorControl() {
+    if (!currentSelectedSector) return;
+    const sectorStats = {
+        'A': { range: 'KP 0 - 350', depth: '20m - 60m', stationId: 'A' },
+        'B': { range: 'KP 350 - 1100', depth: '60m - 4200m', stationId: 'B' },
+        'C': { range: 'KP 1100 - 1550', depth: '4200m - 800m', stationId: 'C' },
+        'D': { range: 'KP 1550 - 1900', depth: '800m - 50m', stationId: 'D' }
+    };
+
+    document.getElementById('sec-kp-range').innerText = sectorStats[currentSelectedSector].range;
+    document.getElementById('sec-depth-range').innerText = sectorStats[currentSelectedSector].depth;
+    document.getElementById('sec-station-id').innerText = sectorStats[currentSelectedSector].stationId;
+
+    // Filter active AUVs in sector
+    const auvList = document.getElementById('sec-auv-list');
+    auvList.innerHTML = '';
+
+    const baseAuvs = [
+        { id: `AUV-${currentSelectedSector}-INV-1`, role: 'Investigation', status: 'Docked / Charging', batt: 100 },
+        { id: `AUV-${currentSelectedSector}-INV-2`, role: 'Investigation', status: 'Docked / Standby', batt: 100 },
+        { id: `TOOL-AUV-${currentSelectedSector}-1`, role: 'Heavy Tool', status: 'Docked / Ready', batt: 100 }
+    ];
+
+    baseAuvs.forEach(base => {
+        const active = digitalTwinDB.active_auvs.find(a => a.id === base.id);
+        const batt = active ? active.battery_percent.toFixed(1) : base.batt;
+        const status = active ? `In Mission (${active.state})` : base.status;
+        const color = active ? 'var(--color-warning)' : 'var(--color-nominal)';
+
+        auvList.innerHTML += `
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.3rem;">
+                <span style="color:${color}">${base.id}</span>
+                <span class="nominal-text">${batt}%</span>
+                <span>${status}</span>
+            </div>`;
+    });
+}
+
+// Bio-Algae Simulation
+let bioAlgaeData = {
+    'A': { yield: 85, power: 12.4, trend: 1 },
+    'B': { yield: 65, power: 8.2, trend: 1 },
+    'C': { yield: 92, power: 14.1, trend: -1 },
+    'D': { yield: 78, power: 10.5, trend: 1 }
+};
+function updateBioAlgae() {
+    if (!currentSelectedSector) return;
+    const data = bioAlgaeData[currentSelectedSector];
+
+    // Fluctuate slightly
+    if (Math.random() > 0.8) {
+        data.yield += data.trend * Math.random() * 0.5;
+        data.power = data.yield * 0.15;
+        if (data.yield > 98) data.trend = -1;
+        if (data.yield < 40) data.trend = 1;
+    }
+
+    document.getElementById('bio-yield').innerText = `${data.yield.toFixed(1)}%`;
+    document.getElementById('bio-power').innerText = `+${data.power.toFixed(1)}%`;
+
+    const statusEl = document.getElementById('bio-status');
+    if (data.yield < 50) {
+        statusEl.innerText = 'LOW YIELD';
+        statusEl.style.color = 'var(--color-warning)';
+        statusEl.style.borderColor = 'var(--color-warning)';
+    } else {
+        statusEl.innerText = 'ACTIVE';
+        statusEl.style.color = '#00ff88';
+        statusEl.style.borderColor = '#00ff88';
+    }
+}
+
+setInterval(updateDashboardMetrics, 500);
+
+// Hook sector nav clicks
+document.getElementById('nav-sector').addEventListener('click', () => {
+    currentSelectedSector = 'B';
+    document.getElementById('sector-control-panel').classList.remove('hidden');
+});
+document.getElementById('nav-global').addEventListener('click', () => {
+    currentSelectedSector = null;
+    document.getElementById('sector-control-panel').classList.add('hidden');
+});
+document.getElementById('nav-inspection').addEventListener('click', () => {
+    currentSelectedSector = 'B';
+    document.getElementById('sector-control-panel').classList.remove('hidden');
+});
+
+document.getElementById('btn-close-sector').addEventListener('click', () => {
+    document.getElementById('sector-control-panel').classList.add('hidden');
+});
+
+// Hook abort button
+document.getElementById('btn-abort-mission').addEventListener('click', () => {
+    const auvId = document.getElementById('auv-id').innerText;
+    const auv = digitalTwinDB.active_auvs.find(a => a.id === auvId);
+    if (auv) {
+        auv.mission_type = 'ABORT';
+        auv.target_kp = auv.home_kp;
+        auv.state = 'TRANSIT_HORIZONTAL';
+
+        const logEl = document.createElement('div');
+        logEl.className = 'log-entry';
+        logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
+                           <span class="critical-text">MISSION ABORTED</span>
+                           <span>${auv.id} returning to base.</span>`;
+        document.getElementById('event-log').prepend(logEl);
+
+        document.getElementById('auv-telemetry').classList.add('hidden');
+    }
+});
+
+// Global oversight handlers
+window.approveOversight = function (id) {
+    const el = document.getElementById(id);
+    if (el) {
+        const rec = JSON.parse(el.dataset.rec);
+        const target = { assetId: el.dataset.asset, kp: parseInt(el.dataset.kp) };
+        triggerRepairMission(rec, target);
+        removeOversight(id);
+        document.getElementById('human-approval-modal').classList.add('hidden'); // Also close modal if open
+    }
+};
+
+window.escalateOversight = function (id) {
+    const el = document.getElementById(id);
+    if (el) {
+        const logEl = document.createElement('div');
+        logEl.className = 'log-entry';
+        logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
+                           <span class="critical-text">FULL SHUTDOWN ESCALATED</span>
+                           <span>System halting all flow.</span>`;
+        document.getElementById('event-log').prepend(logEl);
+        removeOversight(id);
+        document.getElementById('human-approval-modal').classList.add('hidden');
+    }
+};
+
+function removeOversight(id) {
+    const el = document.getElementById(id);
+    if (el) {
+        el.remove();
+        const countEl = document.getElementById('oversight-count');
+        let count = parseInt(countEl.innerText || 0) - 1;
+        countEl.innerText = count < 0 ? 0 : count;
+
+        const oversightList = document.getElementById('oversight-list');
+        if (oversightList.children.length === 0) {
+            oversightList.innerHTML = `<div style="font-size: 0.75rem; color: var(--text-secondary); text-align: center; padding: 1rem;">No pending approvals</div>`;
+        }
+    }
+}

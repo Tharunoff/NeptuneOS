@@ -29,6 +29,17 @@
                     <span class="brand">NeptuneOS</span>
                     <span class="version">v3.0 [GEOSPATIAL CORRIDOR]</span>
                 </div>
+                <div class="top-metrics"
+                    style="display: flex; gap: 2rem; font-family: var(--font-log); font-size: 0.8rem; color: var(--text-secondary);">
+                    <div><span style="color:var(--text-primary);">TIME(UTC):</span> <span id="top-time">--:--:--</span>
+                    </div>
+                    <div><span style="color:var(--text-primary);">AUVs AVAIL:</span> <span id="top-auv-avail">12</span>
+                    </div>
+                    <div><span style="color:var(--text-primary);">AUVs ACTIVE:</span> <span id="top-auv-active"
+                            class="nominal-text">0</span></div>
+                    <div><span style="color:var(--text-primary);">ISOLATIONS:</span> <span id="top-isolations">0</span>
+                    </div>
+                </div>
                 <div class="system-status" id="sys-status">SYS: NOMINAL <span class="indicator"></span></div>
             </header>
 
@@ -47,10 +58,66 @@
                     </button>
                 </div>
 
-                <div class="sector-readout" style="margin-top: 2rem;">
+                <div class="sector-readout" style="margin-top: 1rem;">
                     <div class="metric">
                         <div class="metric-label">CURRENT FOCUS</div>
                         <div class="metric-value highlight-text" id="val-sector">GLOBAL</div>
+                    </div>
+                </div>
+
+                <div class="global-overview"
+                    style="margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
+                    <div class="panel-header" style="margin-bottom: 0.5rem; padding-bottom: 0.2rem;">GLOBAL OVERVIEW
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                        <div class="metric">
+                            <div class="metric-label">SYS CONFIDENCE</div>
+                            <div class="metric-value nominal-text" id="val-confidence">99.9%</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">avg STABILITY</div>
+                            <div class="metric-value" id="val-global-stability">100.0%</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">ACTIVE MISSIONS</div>
+                            <div class="metric-value" id="val-active-missions">0</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">ACTIVE ANOMALIES</div>
+                            <div class="metric-value" id="val-active-anomalies">0</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">ASSETS MONITORED</div>
+                            <div class="metric-value">5 (FULL)</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="system-health"
+                    style="margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
+                    <div class="panel-header" style="margin-bottom: 0.5rem; padding-bottom: 0.2rem;">PERFORMANCE &
+                        HEALTH</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                        <div class="metric">
+                            <div class="metric-label">TOTAL KP SEGMENTS</div>
+                            <div class="metric-value">9500</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">SIM HAZARDS</div>
+                            <div class="metric-value" id="val-sim-hazards">0</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">AVG UNCERTAINTY</div>
+                            <div class="metric-value" id="val-avg-uncertainty">0.00</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">NET LATENCY</div>
+                            <div class="metric-value"><span id="val-latency">12</span> ms</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">COMMS INTEGRITY</div>
+                            <div class="metric-value nominal-text" id="val-comms-int">100%</div>
+                        </div>
                     </div>
                 </div>
             </aside>
@@ -173,6 +240,69 @@
                 </div>
             </aside>
 
+            <!-- Right Panel (Logs & AUV Telemetry) -->
+            <aside class="panel right-panel">
+
+                <!-- AUV Telemetry Dashboard -->
+                <div id="auv-telemetry" class="auv-panel hidden">
+                    <div class="panel-header element-flex">
+                        <span style="color: #00f0ff;">MISSION TRACKING</span>
+                        <span id="auv-id" class="live-badge" style="border-color: #00f0ff; color: #00f0ff;">--</span>
+                    </div>
+                    <div class="telemetry-grid"
+                        style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
+                        <div class="metric">
+                            <div class="metric-label">PHASE/STATE</div>
+                            <div id="auv-state" class="metric-value" style="font-size:0.7rem;">IDLE</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">BATTERY %</div>
+                            <div id="auv-battery" class="metric-value">100.0%</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">DIST. REMAINING</div>
+                            <div id="auv-dist" class="metric-value">--</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">ETA</div>
+                            <div id="auv-eta" class="metric-value">--</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">SPEED (kts)</div>
+                            <div id="auv-speed" class="metric-value">0.0</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">DEPTH</div>
+                            <div id="auv-depth" class="metric-value">0m</div>
+                        </div>
+                    </div>
+                    <button id="btn-abort-mission" class="btn warning-btn"
+                        style="width: 100%; justify-content: center; margin-bottom: 1rem; border-color: #ff3b3b; color: #ff3b3b;">
+                        🛑 ABORT MISSION (RTH)
+                    </button>
+                    <!-- Time Dilation Control -->
+                    <div class="input-group" style="margin-bottom: 1rem;">
+                        <label style="display: flex; justify-content: space-between;">
+                            <span>SIMULATION TIME DILATION</span>
+                            <span id="dilation-val">1000x</span>
+                        </label>
+                        <input type="range" id="time-dilation" min="1" max="10000" value="1000" style="width:100%;">
+                    </div>
+                </div>
+
+                <div class="panel-header element-flex">
+                    <span>SYSTEM EVENT LOG</span>
+                    <span class="live-badge">LIVE</span>
+                </div>
+                <button id="btn-dispatch-auv" class="btn warning-btn hidden"
+                    style="width: 100%; justify-content: center; margin-bottom: 1rem; border-color: #00f0ff; color: #00f0ff;">
+                    🚀 DISPATCH AUV TO CRITICAL ZONE
+                </button>
+                <div class="log-container" id="event-log">
+                    <!-- Log entries injected here -->
+                </div>
+            </aside>
+
             <!-- Bottom Panel (Asset Details) -->
             <footer class="panel bottom-panel">
                 <div class="panel-header">CORRIDOR TELEMETRY</div>
@@ -191,6 +321,120 @@
                     </div>
                 </div>
             </footer>
+
+            <!-- Sector Control Panel -->
+            <aside id="sector-control-panel" class="panel hidden"
+                style="top: 80px; right: 360px; width: 400px; border-top: 3px solid var(--color-nominal);">
+                <div class="panel-header element-flex">
+                    <span id="sector-title">SECTOR CONTROL</span>
+                    <button id="btn-close-sector" class="btn"
+                        style="padding: 0.2rem 0.5rem; font-size: 0.7rem;">X</button>
+                </div>
+                <div class="telemetry-grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
+                    <div class="metric">
+                        <div class="metric-label">KP RANGE</div>
+                        <div class="metric-value" id="sec-kp-range">--</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">DEPTH RANGE</div>
+                        <div class="metric-value" id="sec-depth-range">--</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">STABILITY %</div>
+                        <div class="metric-value" id="sec-stability">--</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">ACTIVE ANOMALIES</div>
+                        <div class="metric-value" id="sec-anomalies">0</div>
+                    </div>
+                </div>
+
+                <!-- Resident Station & Bio-Algae -->
+                <div class="panel-header" style="margin-bottom: 0.5rem; padding-bottom: 0.2rem;">STATION <span
+                        id="sec-station-id"></span> STATUS</div>
+                <div class="telemetry-grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
+                    <div class="metric">
+                        <div class="metric-label">STATION BATTERY</div>
+                        <div class="metric-value" id="stat-battery">100%</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">INTERNAL TEMP</div>
+                        <div class="metric-value" id="stat-temp">4.2°C</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">MAINTENANCE CYCLE</div>
+                        <div class="metric-value" id="stat-maint">4200 hrs</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">TOOL INVENTORY</div>
+                        <div class="metric-value" id="stat-tools">8 / 8</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">CLAMP COUNT</div>
+                        <div class="metric-value" id="stat-clamps">12</div>
+                    </div>
+                </div>
+
+                <!-- Bio-Algae Module -->
+                <div class="panel-header element-flex"
+                    style="margin-bottom: 0.5rem; padding-bottom: 0.2rem; color: #00ff88; border-bottom-color: rgba(0,255,136,0.2);">
+                    <span>BIO-ALGAE ENERGY HARVEST</span>
+                    <span class="live-badge" style="border-color: #00ff88; color: #00ff88;"
+                        id="bio-status">ACTIVE</span>
+                </div>
+                <div class="telemetry-grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
+                    <div class="metric">
+                        <div class="metric-label">GROWTH YIELD</div>
+                        <div class="metric-value" id="bio-yield" style="color:#00ff88;">85%</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">SUPPLEMENTAL PWR</div>
+                        <div class="metric-value" id="bio-power" style="color:#00ff88;">+12.4%</div>
+                    </div>
+                </div>
+
+                <!-- AUV Availability List -->
+                <div class="panel-header" style="margin-bottom: 0.5rem; padding-bottom: 0.2rem;">AUV FLEET AVAILABILITY
+                </div>
+                <div id="sec-auv-list"
+                    style="display: flex; flex-direction: column; gap: 0.5rem; font-family: var(--font-log); font-size: 0.75rem;">
+                    <!-- Injected rows -->
+                </div>
+            </aside>
+
+            <!-- Human Oversight Panel -->
+            <aside class="panel bottom-right-panel"
+                style="position: absolute; bottom: 2rem; right: 2rem; width: 320px; border-bottom: 3px solid #bbaaff;">
+                <div class="panel-header element-flex"
+                    style="color:#bbaaff; border-bottom-color: rgba(187,170,255,0.2); margin-bottom: 0.5rem;">
+                    <span>HUMAN OVERSIGHT MODULE</span>
+                    <span class="live-badge" style="border-color:#bbaaff; color: #bbaaff;">PENDING: <span
+                            id="oversight-count">0</span></span>
+                </div>
+                <div id="oversight-list"
+                    style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 150px; overflow-y: auto;">
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-align: center; padding: 1rem;">No
+                        pending approvals</div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Human Approval Modal -->
+        <div id="human-approval-modal" class="panel hidden"
+            style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; border-color: var(--color-critical); background: rgba(20, 0, 0, 0.95); width: 450px;">
+            <div class="panel-header warning-text element-flex"
+                style="color: var(--color-critical); border-bottom-color: var(--color-critical);">
+                <span>⚠️ CRITICAL STRUCTURAL RISK DETECTED</span>
+            </div>
+            <div id="approval-details"
+                style="margin-bottom: 20px; font-family: var(--font-log); font-size: 0.85rem; line-height: 1.6; color: var(--text-primary);">
+            </div>
+            <div class="buttons" style="flex-direction: column; gap: 10px;">
+                <button id="btn-approve-multi" class="btn critical-btn">Approve Isolation + Multi-AUV
+                    Deployment</button>
+                <button id="btn-escalate-shutdown" class="btn warning-btn">Escalate to Full Shutdown</button>
+                <button id="btn-manual-override" class="btn">Manual Override (Monitor Only)</button>
+            </div>
         </div>
     </div>
 
