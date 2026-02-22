@@ -18,7 +18,7 @@
 
 <body>
 
-    <!-- 3D Simulation View directly loaded -->
+    <!-- 3D Simulation View directly loaded (Zone B) -->
     <div id="simulation-view">
         <div id="canvas-container"></div>
 
@@ -43,385 +43,588 @@
                 <div class="system-status" id="sys-status">SYS: NOMINAL <span class="indicator"></span></div>
             </header>
 
-            <!-- Navigation Panel (Left) -->
-            <aside class="panel left-panel">
-                <div class="panel-header">NAVIGATION MODES</div>
-                <div class="nav-controls">
-                    <button id="nav-global" class="btn active-nav">
-                        <span class="btn-icon">🌐</span> GLOBAL CURVATURE
-                    </button>
-                    <button id="nav-sector" class="btn">
-                        <span class="btn-icon">🗺️</span> SECTOR OVERVIEW
-                    </button>
-                    <button id="nav-inspection" class="btn">
-                        <span class="btn-icon">🔎</span> SEABED INSPECTION
-                    </button>
-                </div>
+            <!-- Sandbox Banner -->
+            <div id="sandbox-banner" class="sandbox-banner hidden">
+                ⚠️ SIMULATION MODE — NOT LIVE ⚠️
+            </div>
+        </div>
 
-                <div class="sector-readout" style="margin-top: 1rem;">
-                    <div class="metric">
-                        <div class="metric-label">CURRENT FOCUS</div>
-                        <div class="metric-value highlight-text" id="val-sector">GLOBAL</div>
-                    </div>
-                </div>
+        <!-- Hazard Notification Toast (Phase 13) -->
+        <div id="hazard-notification-toast" class="hidden"
+            style="position: fixed; top: 70px; left: 50%; transform: translateX(-50%); background: rgba(20, 5, 5, 0.95); border: 1px solid #ffcc00; padding: 1rem 1.5rem; z-index: 300; border-radius: 6px; box-shadow: 0 4px 20px rgba(0,0,0,0.8); backdrop-filter: blur(10px); min-width: 400px; text-align: center;">
+            <div style="font-family: var(--font-log); font-weight: bold; color: #ffcc00; margin-bottom: 0.5rem; letter-spacing: 1px;"
+                id="hz-toast-title">⚠️ ANOMALY DETECTED</div>
+            <div style="font-size: 0.8rem; color: #fff; margin-bottom: 1rem;" id="hz-toast-msg">WAITING FOR
+                INVESTIGATION APPROVAL (<span id="hz-toast-timer" style="font-weight:bold; color:#ffcc00;">10s</span>)
+            </div>
+            <div style="display: flex; gap: 0.5rem; justify-content: center;">
+                <button id="btn-hz-approve" class="btn warning-btn" style="flex:1;">Approve Investigation</button>
+                <button id="btn-hz-delay" class="btn" style="flex:1;">Delay</button>
+                <button id="btn-hz-reject" class="btn" style="flex:1;">Reject</button>
+            </div>
+            <div id="hz-escalating-warning" class="hidden"
+                style="margin-top: 0.8rem; font-size: 0.75rem; color: #ff3b3b; font-weight:bold;">CRITICAL ESCALATION IN
+                <span id="hz-escalate-timer">30s</span></div>
+        </div>
 
-                <div class="global-overview"
-                    style="margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
-                    <div class="panel-header" style="margin-bottom: 0.5rem; padding-bottom: 0.2rem;">GLOBAL OVERVIEW
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
-                        <div class="metric">
-                            <div class="metric-label">SYS CONFIDENCE</div>
-                            <div class="metric-value nominal-text" id="val-confidence">99.9%</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">avg STABILITY</div>
-                            <div class="metric-value" id="val-global-stability">100.0%</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">ACTIVE MISSIONS</div>
-                            <div class="metric-value" id="val-active-missions">0</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">ACTIVE ANOMALIES</div>
-                            <div class="metric-value" id="val-active-anomalies">0</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">ASSETS MONITORED</div>
-                            <div class="metric-value">5 (FULL)</div>
-                        </div>
-                    </div>
-                </div>
+        <div class="main-layout-zones">
 
-                <div class="system-health"
-                    style="margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
-                    <div class="panel-header" style="margin-bottom: 0.5rem; padding-bottom: 0.2rem;">PERFORMANCE &
-                        HEALTH</div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
-                        <div class="metric">
-                            <div class="metric-label">TOTAL KP SEGMENTS</div>
-                            <div class="metric-value">9500</div>
+            <!-- ZONE A: Left Vertical Control Dock -->
+            <aside id="left-dock" class="dock-panel">
+                <div class="dock-header">CONTROL DOCK</div>
+
+                <div class="accordion-container">
+
+                    <!-- Navigation Item -->
+                    <div class="accordion-item" data-panel="nav-panel">
+                        <span class="btn-icon">🌐</span> Navigation & Layers
+                    </div>
+                    <div id="nav-panel" class="accordion-content">
+                        <div class="sector-readout" style="margin-bottom: 1rem;">
+                            <div class="metric">
+                                <div class="metric-label">CURRENT FOCUS</div>
+                                <div class="metric-value highlight-text" id="val-sector">GLOBAL</div>
+                            </div>
                         </div>
-                        <div class="metric">
-                            <div class="metric-label">SIM HAZARDS</div>
-                            <div class="metric-value" id="val-sim-hazards">0</div>
+
+                        <div class="panel-header element-flex">
+                            <span>LAYER CONTROLS</span>
+                            <span class="live-badge">SYNCED</span>
                         </div>
-                        <div class="metric">
-                            <div class="metric-label">AVG UNCERTAINTY</div>
-                            <div class="metric-value" id="val-avg-uncertainty">0.00</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">NET LATENCY</div>
-                            <div class="metric-value"><span id="val-latency">12</span> ms</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">COMMS INTEGRITY</div>
-                            <div class="metric-value nominal-text" id="val-comms-int">100%</div>
+                        <div class="layer-list">
+                            <label class="layer-toggle neptune-tooltip" data-tooltip="Toggle Gas Pipelines A/B"
+                                data-tooltip-short="Show/Hide primary dual gas transportation lines.">
+                                <input type="checkbox" id="layer-gas" checked>
+                                <span class="toggle-box"></span>
+                                <span class="layer-name">Gas Pipelines (A/B)</span>
+                            </label>
+                            <label class="layer-toggle neptune-tooltip" data-tooltip="Toggle Crude Oil Pipeline">
+                                <input type="checkbox" id="layer-crude" checked>
+                                <span class="toggle-box"></span>
+                                <span class="layer-name">Crude Oil Pipeline</span>
+                            </label>
+                            <label class="layer-toggle neptune-tooltip" data-tooltip="Toggle HV Power Cable">
+                                <input type="checkbox" id="layer-power" checked>
+                                <span class="toggle-box"></span>
+                                <span class="layer-name">HV Power Cable</span>
+                            </label>
+                            <label class="layer-toggle neptune-tooltip" data-tooltip="Toggle Fiber Optic Cable">
+                                <input type="checkbox" id="layer-fiber" checked>
+                                <span class="toggle-box"></span>
+                                <span class="layer-name">Fiber Optic Cable</span>
+                            </label>
+
+                            <div style="height: 1px; background: rgba(255,255,255,0.1); margin: 10px 0;"></div>
+
+                            <label class="layer-toggle neptune-tooltip" data-tooltip="Toggle Sector Boundaries">
+                                <input type="checkbox" id="layer-sectors" checked>
+                                <span class="toggle-box"></span>
+                                <span class="layer-name">Sector Boundaries</span>
+                            </label>
+                            <label class="layer-toggle neptune-tooltip" data-tooltip="Toggle Bathymetry Terrain">
+                                <input type="checkbox" id="layer-bathymetry" checked>
+                                <span class="toggle-box"></span>
+                                <span class="layer-name">Bathymetry Terrain</span>
+                            </label>
+                            <label class="layer-toggle neptune-tooltip" data-tooltip="Toggle Resident Stations">
+                                <input type="checkbox" id="layer-stations" checked>
+                                <span class="toggle-box"></span>
+                                <span class="layer-name">Resident Stations</span>
+                            </label>
+                            <label class="layer-toggle neptune-tooltip" data-tooltip="Toggle KP Markers">
+                                <input type="checkbox" id="layer-kp" checked>
+                                <span class="toggle-box"></span>
+                                <span class="layer-name">KP Markers (50km)</span>
+                            </label>
                         </div>
                     </div>
+
+                    <!-- Sector Control Item -->
+                    <div class="accordion-item" data-panel="sector-ctrl-panel">
+                        <span class="btn-icon">🗺️</span> Sector Control
+                    </div>
+                    <div id="sector-ctrl-panel" class="accordion-content">
+                        <div class="panel-header element-flex">
+                            <span id="sector-title">SECTOR CONTROL</span>
+                            <button id="btn-close-sector" class="btn hidden"
+                                style="padding: 0.2rem 0.5rem; font-size: 0.7rem;">X</button>
+                        </div>
+                        <div class="telemetry-grid"
+                            style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
+                            <div class="metric neptune-tooltip" data-tooltip="KP Range"
+                                data-tooltip-short="Kilometer Point boundary of this sector.">
+                                <div class="metric-label">KP RANGE</div>
+                                <div class="metric-value" id="sec-kp-range">--</div>
+                            </div>
+                            <div class="metric neptune-tooltip" data-tooltip="Depth Range">
+                                <div class="metric-label">DEPTH RANGE</div>
+                                <div class="metric-value" id="sec-depth-range">--</div>
+                            </div>
+                            <div class="metric neptune-tooltip" data-tooltip="Sector Stability"
+                                data-tooltip-short="Aggregated probabilistic risk score."
+                                data-tooltip-tech="Derived from Bayesian risk modeling across KP segments.">
+                                <div class="metric-label">STABILITY %</div>
+                                <div class="metric-value" id="sec-stability">--</div>
+                            </div>
+                            <div class="metric neptune-tooltip" data-tooltip="Active Anomalies">
+                                <div class="metric-label">ACTIVE ANOMALIES</div>
+                                <div class="metric-value" id="sec-anomalies">0</div>
+                            </div>
+                        </div>
+
+                        <div class="panel-header" style="margin-bottom: 0.5rem; padding-bottom: 0.2rem;">STATION
+                            <span id="sec-station-id"></span> STATUS
+                        </div>
+                        <div class="telemetry-grid"
+                            style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
+                            <div class="metric neptune-tooltip" data-tooltip="Station Battery">
+                                <div class="metric-label">STATION BATTERY</div>
+                                <div class="metric-value" id="stat-battery">100%</div>
+                            </div>
+                            <div class="metric neptune-tooltip" data-tooltip="Internal Temperature">
+                                <div class="metric-label">INTERNAL TEMP</div>
+                                <div class="metric-value" id="stat-temp">4.2°C</div>
+                            </div>
+                            <div class="metric neptune-tooltip" data-tooltip="Next Maintenance">
+                                <div class="metric-label">MAINTENANCE CYCLE</div>
+                                <div class="metric-value" id="stat-maint">4200 hrs</div>
+                            </div>
+                            <div class="metric neptune-tooltip" data-tooltip="Tool Inventory">
+                                <div class="metric-label">TOOL INVENTORY</div>
+                                <div class="metric-value" id="stat-tools">8 / 8</div>
+                            </div>
+                            <div class="metric neptune-tooltip" data-tooltip="Available Clamps">
+                                <div class="metric-label">CLAMP COUNT</div>
+                                <div class="metric-value" id="stat-clamps">12</div>
+                            </div>
+                        </div>
+
+                        <!-- Bio-Algae Module -->
+                        <div class="panel-header element-flex"
+                            style="margin-bottom: 0.5rem; padding-bottom: 0.2rem; color: #00ff88; border-bottom-color: rgba(0,255,136,0.2);">
+                            <span class="neptune-tooltip" data-tooltip="Bio-Energy Harvest"
+                                data-tooltip-short="Marine algae-based supplemental energy system."
+                                data-tooltip-tech="Reduces reliance on external power sources.">BIO-ALGAE
+                                HARVEST</span>
+                            <span class="live-badge" style="border-color: #00ff88; color: #00ff88;"
+                                id="bio-status">ACTIVE</span>
+                        </div>
+                        <div class="telemetry-grid"
+                            style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
+                            <div class="metric neptune-tooltip" data-tooltip="Growth Yield">
+                                <div class="metric-label">GROWTH YIELD</div>
+                                <div class="metric-value" id="bio-yield" style="color:#00ff88;">85%</div>
+                            </div>
+                            <div class="metric neptune-tooltip" data-tooltip="Supplemental Power">
+                                <div class="metric-label">SUPPLEMENTAL PWR</div>
+                                <div class="metric-value" id="bio-power" style="color:#00ff88;">+12.4%</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hazard Engine Item -->
+                    <div class="accordion-item neptune-tooltip" data-panel="hazard-panel" data-tooltip="Hazard Engine"
+                        data-tooltip-short="Inject simulated failure scenarios."
+                        data-tooltip-tech="Used to test system detection and response capability.">
+                        <span class="btn-icon">⚡</span> Hazard Engine
+                    </div>
+                    <div id="hazard-panel" class="accordion-content">
+                        <div class="hazard-controls">
+                            <div class="input-group">
+                                <label>ASSET TARGET</label>
+                                <select id="hz-asset" class="neptune-select">
+                                    <option value="gas_a">Gas Pipeline A</option>
+                                    <option value="gas_b">Gas Pipeline B</option>
+                                    <option value="crude">Crude Oil Pipeline</option>
+                                    <option value="power">HV Power Cable</option>
+                                    <option value="fiber">Fiber Optic Cable</option>
+                                </select>
+                            </div>
+
+                            <div class="input-group">
+                                <label>KP LOCATION (0-1900)</label>
+                                <input type="number" id="hz-kp" class="neptune-input" min="0" max="1900" value="750">
+                            </div>
+
+                            <div class="input-group">
+                                <label>HAZARD TYPE</label>
+                                <select id="hz-type" class="neptune-select warning-text">
+                                    <option value="anchor_drag">Anchor Drag Impact</option>
+                                    <option value="corrosion">Corrosion Breach</option>
+                                    <option value="gas_leak">Gas Micro-Leak</option>
+                                    <option value="crude_rupture">Crude Oil Rupture</option>
+                                    <option value="fiber_att">Fiber Signal Attenuation</option>
+                                    <option value="landslide">Seabed Landslide</option>
+                                    <option value="turbine_crack">Turbine Structure Crack</option>
+                                    <option value="marine_collision">Marine Animal Collision</option>
+                                    <option value="seismic">Seismic Micro-Tremor</option>
+                                </select>
+                            </div>
+
+                            <div class="input-group">
+                                <label>SEVERITY</label>
+                                <select id="hz-severity" class="neptune-select">
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high" class="warning-text">High</option>
+                                    <option value="critical" class="critical-text">Critical</option>
+                                </select>
+                            </div>
+
+                            <button id="btn-inject" class="btn warning-btn neptune-tooltip"
+                                data-tooltip="Inject Anomaly"
+                                data-tooltip-short="Triggers selected failure into the simulation."
+                                style="width: 100%; justify-content: center; margin-top: 0.5rem;">
+                                ⚡ INJECT ANOMALY
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Mission Tracking Item -->
+                    <div class="accordion-item" data-panel="mission-panel">
+                        <span class="btn-icon">🎯</span> Mission Tracking
+                    </div>
+                    <div id="mission-panel" class="accordion-content">
+                        <div id="auv-telemetry" class="auv-panel hidden">
+                            <div class="panel-header element-flex">
+                                <span style="color: #00f0ff;">TRACKING:</span>
+                                <span id="auv-id" class="live-badge"
+                                    style="border-color: #00f0ff; color: #00f0ff;">--</span>
+                            </div>
+                            <div class="telemetry-grid"
+                                style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
+                                <div class="metric neptune-tooltip" data-tooltip="Mission State">
+                                    <div class="metric-label">PHASE/STATE</div>
+                                    <div id="auv-state" class="metric-value" style="font-size:0.7rem;">IDLE</div>
+                                </div>
+                                <div class="metric neptune-tooltip" data-tooltip="AUV Battery">
+                                    <div class="metric-label">BATTERY %</div>
+                                    <div id="auv-battery" class="metric-value">100.0%</div>
+                                </div>
+                                <div class="metric neptune-tooltip" data-tooltip="Distance Remaining">
+                                    <div class="metric-label">DIST. REMAINING</div>
+                                    <div id="auv-dist" class="metric-value">--</div>
+                                </div>
+                                <div class="metric neptune-tooltip" data-tooltip="Est. Time of Arrival">
+                                    <div class="metric-label">ETA</div>
+                                    <div id="auv-eta" class="metric-value">--</div>
+                                </div>
+                                <div class="metric neptune-tooltip" data-tooltip="Travel Speed">
+                                    <div class="metric-label">SPEED (kts)</div>
+                                    <div id="auv-speed" class="metric-value">0.0</div>
+                                </div>
+                                <div class="metric neptune-tooltip" data-tooltip="Current Depth">
+                                    <div class="metric-label">DEPTH</div>
+                                    <div id="auv-depth" class="metric-value">0m</div>
+                                </div>
+                            </div>
+                            <button id="btn-abort-mission" class="btn warning-btn neptune-tooltip"
+                                data-tooltip="Abort Mission" data-tooltip-short="Force AUV to return to home station."
+                                style="width: 100%; justify-content: center; margin-bottom: 1rem; border-color: #ff3b3b; color: #ff3b3b;">
+                                🛑 ABORT (RTH)
+                            </button>
+                        </div>
+                        <div id="msg-no-mission"
+                            style="font-size:0.8rem; color:var(--text-secondary); text-align:center;">No active
+                            tracked mission</div>
+                    </div>
+
+                    <!-- AUV Fleet Item -->
+                    <div class="accordion-item neptune-tooltip" data-panel="fleet-panel" data-tooltip="AUV Fleet"
+                        data-tooltip-short="Monitor AUV battery, readiness, and mission status."
+                        data-tooltip-tech="Used to assess deployment capability.">
+                        <span class="btn-icon">🚀</span> AUV Fleet
+                    </div>
+                    <div id="fleet-panel" class="accordion-content">
+                        <div class="panel-header" style="margin-bottom: 0.5rem; padding-bottom: 0.2rem;">
+                            AVAILABILITY</div>
+                        <div id="sec-auv-list"
+                            style="display: flex; flex-direction: column; gap: 0.5rem; font-family: var(--font-log); font-size: 0.75rem;">
+                            <!-- Injected rows -->
+                            <div style="text-align:center; color:var(--text-secondary);">Select a Sector First</div>
+                        </div>
+                    </div>
+
+                    <!-- Digital Twin Item -->
+                    <div class="accordion-item" data-panel="twin-panel">
+                        <span class="btn-icon">🏙️</span> Digital Twin
+                    </div>
+                    <div id="twin-panel" class="accordion-content">
+                        <!-- Global Overview stats moved here, or kept above? The user wants DT stuff here, let's put Global overview here -->
+                        <div class="global-overview">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                                <div class="metric neptune-tooltip" data-tooltip="System Confidence">
+                                    <div class="metric-label">SYS CONFIDENCE</div>
+                                    <div class="metric-value nominal-text" id="val-confidence">99.9%</div>
+                                </div>
+                                <div class="metric neptune-tooltip" data-tooltip="Global Stability">
+                                    <div class="metric-label">avg STABILITY</div>
+                                    <div class="metric-value" id="val-global-stability">100.0%</div>
+                                </div>
+                                <div class="metric neptune-tooltip" data-tooltip="Active Missions">
+                                    <div class="metric-label">ACTIVE MISSIONS</div>
+                                    <div class="metric-value" id="val-active-missions">0</div>
+                                </div>
+                                <div class="metric neptune-tooltip" data-tooltip="Active Anomalies">
+                                    <div class="metric-label">ACTIVE ANOMALIES</div>
+                                    <div class="metric-value" id="val-active-anomalies">0</div>
+                                </div>
+                                <div class="metric neptune-tooltip" data-tooltip="Assets Monitored">
+                                    <div class="metric-label">ASSETS</div>
+                                    <div class="metric-value">5 (FULL)</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="system-health"
+                            style="margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
+                            <div class="panel-header" style="margin-bottom: 0.5rem; padding-bottom: 0.2rem;">HEALTH
+                                METRICS</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                                <div class="metric">
+                                    <div class="metric-label">TOTAL KP SEG</div>
+                                    <div class="metric-value">9500</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-label">SIM HAZARDS</div>
+                                    <div class="metric-value" id="val-sim-hazards">0</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-label">AVG UNCERTAINTY</div>
+                                    <div class="metric-value" id="val-avg-uncertainty">0.00</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-label">NET LATENCY</div>
+                                    <div class="metric-value"><span id="val-latency">12</span> ms</div>
+                                </div>
+                                <div class="metric">
+                                    <div class="metric-label">COMMS INTEGRITY</div>
+                                    <div class="metric-value nominal-text" id="val-comms-int">100%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Preventive Intelligence Item (Phase 12) -->
+                    <div class="accordion-item" data-panel="preventive-panel">
+                        <span class="btn-icon">🔮</span> Preventive Intelligence
+                    </div>
+                    <div id="preventive-panel" class="accordion-content">
+                        <div class="panel-header warning-text">FORECASTED RISKS</div>
+                        <div id="preventive-list"
+                            style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 250px; overflow-y: auto;">
+                            <div class="empty-state"
+                                style="color:var(--text-secondary); text-align:center; font-size:0.75rem;">No
+                                preemptive risks forecasted.</div>
+                        </div>
+
+                        <div class="panel-header" style="margin-top: 1rem; padding-bottom: 0.2rem;">SYSTEM RISK
+                            EVOLUTION</div>
+                        <div
+                            style="display:flex; height:60px; align-items:flex-end; gap:4px; padding: 0.5rem 0.5rem 0 0.5rem; background:rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-bottom: none;">
+                            <div id="risk-bar-now"
+                                style="height: 10%; background: #00ff88; width: 25%; transition: height 0.3s;"
+                                title="RT"></div>
+                            <div id="risk-bar-6h"
+                                style="height: 15%; background: #00ccff; width: 25%; transition: height 0.3s;"
+                                title="+6H"></div>
+                            <div id="risk-bar-24h"
+                                style="height: 30%; background: #ffcc00; width: 25%; transition: height 0.3s;"
+                                title="+24H"></div>
+                            <div id="risk-bar-7d"
+                                style="height: 60%; background: #ff3b3b; width: 25%; transition: height 0.3s;"
+                                title="+7D"></div>
+                        </div>
+                        <div
+                            style="display:flex; justify-content:space-between; font-size:0.6rem; font-family: var(--font-ui); color:var(--text-secondary); padding: 2px 0.5rem 0.5rem 0.5rem; background:rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-top: 1px solid rgba(255,255,255,0.2);">
+                            <span>LIVE</span><span>+6H</span><span>+24H</span><span>+7D</span>
+                        </div>
+                    </div>
+
+                    <!-- Human Oversight Item -->
+                    <div class="accordion-item" data-panel="oversight-panel">
+                        <span class="btn-icon">👁️</span> Human Oversight
+                    </div>
+                    <div id="oversight-panel" class="accordion-content">
+                        <div class="panel-header element-flex"
+                            style="color:#bbaaff; border-bottom-color: rgba(187,170,255,0.2); margin-bottom: 0.5rem;">
+                            <span>PENDING REVIEW</span>
+                            <span class="live-badge" style="border-color:#bbaaff; color: #bbaaff;">COUNT: <span
+                                    id="oversight-count">0</span></span>
+                        </div>
+                        <div id="oversight-list"
+                            style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 250px; overflow-y: auto;">
+                            <div
+                                style="font-size: 0.75rem; color: var(--text-secondary); text-align: center; padding: 1rem;">
+                                No pending approvals</div>
+                        </div>
+                    </div>
+
+                    <!-- Security & Protection Item (Phase 11) -->
+                    <div class="accordion-item" data-panel="security-panel">
+                        <span class="btn-icon">🛡️</span> Security & Protection
+                    </div>
+                    <div id="security-panel" class="accordion-content">
+                        <div class="security-dashboard">
+                            <div>
+                                <div class="panel-header"
+                                    style="color:#ff5555; border-bottom-color: rgba(255,85,85,0.2);">ACTIVE THREATS
+                                </div>
+                                <div id="active-threats-list"
+                                    style="margin-bottom:1rem; border:1px dashed rgba(255,85,85,0.3); padding:0.5rem; background:rgba(20,5,5,0.2); min-height: 50px;">
+                                    <div class="empty-state"
+                                        style="color:var(--text-secondary); text-align:center; font-size:0.75rem;">
+                                        System Secure.<br>No active threats.</div>
+                                </div>
+                            </div>
+                            <div class="security-actions">
+                                <div class="panel-header">RESPONSE CAPABILITIES</div>
+                                <div class="action-grid" id="response-grid"
+                                    style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.5rem;">
+                                    <button class="btn warning-btn" onclick="dispatchSecurityAUV()">Dispatch
+                                        Investigation AUV</button>
+                                    <button class="btn warning-btn" onclick="activateIsolation()">Activate Isolation
+                                        Pre-check</button>
+                                    <button class="btn" onclick="escalateToCoastGuard()"
+                                        style="border-color:#ff5555; color:#ff5555;">Escalate to Coast
+                                        Guard</button>
+                                    <button class="btn" onclick="enableHFAcoustics()">Enable HF Acoustics</button>
+                                    <button class="btn" onclick="lockDownSector()"
+                                        style="background:rgba(255,0,0,0.1); border-color:red; color:white; margin-top:0.5rem;">LOCK
+                                        DOWN SECTOR</button>
+                                </div>
+                            </div>
+                            <div class="log-container mt-2" style="margin-top:1.5rem;">
+                                <div class="panel-header">FORENSIC INCIDENT LOG</div>
+                                <div id="forensic-log-list"
+                                    style="height:120px; overflow-y:auto; border:1px solid var(--border-color); padding:0.5rem; background:#02050a; font-family:var(--font-log); font-size:0.7rem;">
+                                    <div style="color:var(--text-secondary);">> Security monitoring active...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- System Analytics moved to floating right panel -->
                 </div>
             </aside>
 
-            <!-- Layers Panel (Right) -->
-            <aside class="panel right-panel">
-                <div class="panel-header element-flex">
-                    <span>LAYER CONTROLS</span>
-                    <span class="live-badge">SYNCED</span>
-                </div>
-
-                <div class="layer-list">
-                    <label class="layer-toggle">
-                        <input type="checkbox" id="layer-gas" checked>
-                        <span class="toggle-box"></span>
-                        <span class="layer-name">Gas Pipelines (A/B)</span>
-                    </label>
-                    <label class="layer-toggle">
-                        <input type="checkbox" id="layer-crude" checked>
-                        <span class="toggle-box"></span>
-                        <span class="layer-name">Crude Oil Pipeline</span>
-                    </label>
-                    <label class="layer-toggle">
-                        <input type="checkbox" id="layer-power" checked>
-                        <span class="toggle-box"></span>
-                        <span class="layer-name">HV Power Cable</span>
-                    </label>
-                    <label class="layer-toggle">
-                        <input type="checkbox" id="layer-fiber" checked>
-                        <span class="toggle-box"></span>
-                        <span class="layer-name">Fiber Optic Cable</span>
-                    </label>
-
-                    <div style="height: 1px; background: rgba(255,255,255,0.1); margin: 10px 0;"></div>
-
-                    <label class="layer-toggle">
-                        <input type="checkbox" id="layer-sectors" checked>
-                        <span class="toggle-box"></span>
-                        <span class="layer-name">Sector Boundaries</span>
-                    </label>
-                    <label class="layer-toggle">
-                        <input type="checkbox" id="layer-bathymetry" checked>
-                        <span class="toggle-box"></span>
-                        <span class="layer-name">Bathymetry Terrain</span>
-                    </label>
-                    <label class="layer-toggle">
-                        <input type="checkbox" id="layer-stations" checked>
-                        <span class="toggle-box"></span>
-                        <span class="layer-name">Resident Stations</span>
-                    </label>
-                    <label class="layer-toggle">
-                        <input type="checkbox" id="layer-kp" checked>
-                        <span class="toggle-box"></span>
-                        <span class="layer-name">KP Markers (50km)</span>
-                    </label>
-
-                    <div style="height: 1px; background: rgba(255,255,255,0.1); margin: 10px 0;"></div>
-
-                    <label class="layer-toggle"
-                        style="background: rgba(255,100,0,0.1); border: 1px solid rgba(255,100,0,0.3);">
-                        <input type="checkbox" id="mode-debug">
-                        <span class="toggle-box" style="border-color: orange;"></span>
-                        <span class="layer-name" style="color: orange; font-weight: bold;">VISUAL DEBUG MODE</span>
-                    </label>
-                </div>
-            </aside> <!-- Hazard Injection Panel (Bottom Left) -->
-            <aside class="panel hazard-panel">
-                <div class="panel-header warning-text element-flex">
-                    <span>HAZARD ENGINE</span>
-                    <span class="live-badge"
-                        style="border-color: var(--color-warning); color: var(--color-warning);">PHASE 3</span>
-                </div>
-
-                <div class="hazard-controls">
-                    <div class="input-group">
-                        <label>ASSET TARGET</label>
-                        <select id="hz-asset" class="neptune-select">
-                            <option value="gas_a">Gas Pipeline A</option>
-                            <option value="gas_b">Gas Pipeline B</option>
-                            <option value="crude">Crude Oil Pipeline</option>
-                            <option value="power">HV Power Cable</option>
-                            <option value="fiber">Fiber Optic Cable</option>
-                        </select>
-                    </div>
-
-                    <div class="input-group">
-                        <label>KP LOCATION (0-1900)</label>
-                        <input type="number" id="hz-kp" class="neptune-input" min="0" max="1900" value="750">
-                    </div>
-
-                    <div class="input-group">
-                        <label>HAZARD TYPE</label>
-                        <select id="hz-type" class="neptune-select warning-text">
-                            <option value="anchor_drag">Anchor Drag Impact</option>
-                            <option value="corrosion">Corrosion Breach</option>
-                            <option value="gas_leak">Gas Micro-Leak</option>
-                            <option value="crude_rupture">Crude Oil Rupture</option>
-                            <option value="fiber_att">Fiber Signal Attenuation</option>
-                            <option value="landslide">Seabed Landslide</option>
-                            <option value="turbine_crack">Turbine Structure Crack</option>
-                            <option value="marine_collision">Marine Animal Collision</option>
-                            <option value="seismic">Seismic Micro-Tremor</option>
-                        </select>
-                    </div>
-
-                    <div class="input-group">
-                        <label>SEVERITY</label>
-                        <select id="hz-severity" class="neptune-select">
-                            <option value="low">Low</option>
-                            <option value="medium">Medium</option>
-                            <option value="high" class="warning-text">High</option>
-                            <option value="critical" class="critical-text">Critical</option>
-                        </select>
-                    </div>
-
-                    <button id="btn-inject" class="btn warning-btn"
-                        style="width: 100%; justify-content: center; margin-top: 0.5rem;">
-                        ⚡ INJECT ANOMALY
+            <!-- ZONE C: Contextual Right Panel -->
+            <aside id="right-panel" class="contextual-panel">
+                <div class="panel-header" id="right-panel-header">CONTEXTUAL INFO</div>
+                <div id="right-panel-content">
+                    <div class="instruction-text">Select an asset, sector, or trigger a hazard to view contextual
+                        details here.</div>
+                    <button id="btn-dispatch-auv" class="btn warning-btn hidden neptune-tooltip"
+                        data-tooltip="Dispatch Intervention AUV"
+                        data-tooltip-short="Sends nearest AUV to investigate or repair anomalies."
+                        style="width: 100%; justify-content: center; margin-bottom: 1rem; border-color: #00f0ff; color: #00f0ff;">
+                        🚀 DISPATCH AUV
                     </button>
                 </div>
             </aside>
 
-            <!-- Right Panel (Logs & AUV Telemetry) -->
-            <aside class="panel right-panel">
-
-                <!-- AUV Telemetry Dashboard -->
-                <div id="auv-telemetry" class="auv-panel hidden">
-                    <div class="panel-header element-flex">
-                        <span style="color: #00f0ff;">MISSION TRACKING</span>
-                        <span id="auv-id" class="live-badge" style="border-color: #00f0ff; color: #00f0ff;">--</span>
-                    </div>
-                    <div class="telemetry-grid"
-                        style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
-                        <div class="metric">
-                            <div class="metric-label">PHASE/STATE</div>
-                            <div id="auv-state" class="metric-value" style="font-size:0.7rem;">IDLE</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">BATTERY %</div>
-                            <div id="auv-battery" class="metric-value">100.0%</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">DIST. REMAINING</div>
-                            <div id="auv-dist" class="metric-value">--</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">ETA</div>
-                            <div id="auv-eta" class="metric-value">--</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">SPEED (kts)</div>
-                            <div id="auv-speed" class="metric-value">0.0</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">DEPTH</div>
-                            <div id="auv-depth" class="metric-value">0m</div>
-                        </div>
-                    </div>
-                    <button id="btn-abort-mission" class="btn warning-btn"
-                        style="width: 100%; justify-content: center; margin-bottom: 1rem; border-color: #ff3b3b; color: #ff3b3b;">
-                        🛑 ABORT MISSION (RTH)
-                    </button>
-                    <!-- Time Dilation Control -->
-                    <div class="input-group" style="margin-bottom: 1rem;">
-                        <label style="display: flex; justify-content: space-between;">
-                            <span>SIMULATION TIME DILATION</span>
-                            <span id="dilation-val">1000x</span>
-                        </label>
-                        <input type="range" id="time-dilation" min="1" max="10000" value="1000" style="width:100%;">
-                    </div>
-                </div>
-
+            <!-- ZONE D: Live Log Panel (Analytics) -->
+            <aside id="live-log-panel" class="live-log-panel">
                 <div class="panel-header element-flex">
                     <span>SYSTEM EVENT LOG</span>
                     <span class="live-badge">LIVE</span>
                 </div>
-                <button id="btn-dispatch-auv" class="btn warning-btn hidden"
-                    style="width: 100%; justify-content: center; margin-bottom: 1rem; border-color: #00f0ff; color: #00f0ff;">
-                    🚀 DISPATCH AUV TO CRITICAL ZONE
-                </button>
-                <div class="log-container" id="event-log">
+                <div class="log-container" id="event-log" style="height: 100%; min-height: 250px;">
                     <!-- Log entries injected here -->
                 </div>
             </aside>
+            </aside>
 
-            <!-- Bottom Panel (Asset Details) -->
-            <footer class="panel bottom-panel">
-                <div class="panel-header">CORRIDOR TELEMETRY</div>
-                <div class="telemetry-grid">
-                    <div class="metric">
-                        <div class="metric-label">START NODE</div>
-                        <div class="metric-value">MUNDRA [KP 0]</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">END NODE</div>
-                        <div class="metric-value">FUJAIRAH [KP 1900]</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">MAX DEPTH</div>
-                        <div class="metric-value warning-text">-4200 m (Sector B)</div>
-                    </div>
-                </div>
-            </footer>
-
-            <!-- Sector Control Panel -->
-            <aside id="sector-control-panel" class="panel hidden"
-                style="top: 80px; right: 360px; width: 400px; border-top: 3px solid var(--color-nominal);">
+            <!-- ZONE E: Predictive Time Simulation Panel -->
+            <aside id="time-control-panel" class="time-control-panel">
                 <div class="panel-header element-flex">
-                    <span id="sector-title">SECTOR CONTROL</span>
-                    <button id="btn-close-sector" class="btn"
-                        style="padding: 0.2rem 0.5rem; font-size: 0.7rem;">X</button>
-                </div>
-                <div class="telemetry-grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
-                    <div class="metric">
-                        <div class="metric-label">KP RANGE</div>
-                        <div class="metric-value" id="sec-kp-range">--</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">DEPTH RANGE</div>
-                        <div class="metric-value" id="sec-depth-range">--</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">STABILITY %</div>
-                        <div class="metric-value" id="sec-stability">--</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">ACTIVE ANOMALIES</div>
-                        <div class="metric-value" id="sec-anomalies">0</div>
+                    <span>TIME ACCELERATION</span>
+                    <div class="sandbox-toggle-wrapper neptune-tooltip" data-tooltip="Sandbox Mode"
+                        data-tooltip-short="Isolate simulation from live digital twin state.">
+                        <label class="layer-toggle" style="margin:0;">
+                            <input type="checkbox" id="toggle-sandbox">
+                            <span class="toggle-box" style="border-color: #ff9900;"></span>
+                            <span class="layer-name" style="color: #ff9900; font-size: 0.7rem;">SANDBOX</span>
+                        </label>
                     </div>
                 </div>
-
-                <!-- Resident Station & Bio-Algae -->
-                <div class="panel-header" style="margin-bottom: 0.5rem; padding-bottom: 0.2rem;">STATION <span
-                        id="sec-station-id"></span> STATUS</div>
-                <div class="telemetry-grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
-                    <div class="metric">
-                        <div class="metric-label">STATION BATTERY</div>
-                        <div class="metric-value" id="stat-battery">100%</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">INTERNAL TEMP</div>
-                        <div class="metric-value" id="stat-temp">4.2°C</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">MAINTENANCE CYCLE</div>
-                        <div class="metric-value" id="stat-maint">4200 hrs</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">TOOL INVENTORY</div>
-                        <div class="metric-value" id="stat-tools">8 / 8</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">CLAMP COUNT</div>
-                        <div class="metric-value" id="stat-clamps">12</div>
-                    </div>
+                <div class="time-controls-grid">
+                    <button class="btn time-btn active" data-mult="1">1x (RT)</button>
+                    <button class="btn time-btn" data-mult="10">10x</button>
+                    <button class="btn time-btn" data-mult="100">100x</button>
                 </div>
-
-                <!-- Bio-Algae Module -->
-                <div class="panel-header element-flex"
-                    style="margin-bottom: 0.5rem; padding-bottom: 0.2rem; color: #00ff88; border-bottom-color: rgba(0,255,136,0.2);">
-                    <span>BIO-ALGAE ENERGY HARVEST</span>
-                    <span class="live-badge" style="border-color: #00ff88; color: #00ff88;"
-                        id="bio-status">ACTIVE</span>
+                <div class="time-jump-grid" style="margin-top: 0.5rem;">
+                    <button class="btn time-jump-btn" data-jump="6">+6h</button>
+                    <button class="btn time-jump-btn" data-jump="24">+24h</button>
+                    <button class="btn time-jump-btn" data-jump="168">+7d</button>
                 </div>
-                <div class="telemetry-grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
-                    <div class="metric">
-                        <div class="metric-label">GROWTH YIELD</div>
-                        <div class="metric-value" id="bio-yield" style="color:#00ff88;">85%</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">SUPPLEMENTAL PWR</div>
-                        <div class="metric-value" id="bio-power" style="color:#00ff88;">+12.4%</div>
-                    </div>
-                </div>
-
-                <!-- AUV Availability List -->
-                <div class="panel-header" style="margin-bottom: 0.5rem; padding-bottom: 0.2rem;">AUV FLEET AVAILABILITY
-                </div>
-                <div id="sec-auv-list"
-                    style="display: flex; flex-direction: column; gap: 0.5rem; font-family: var(--font-log); font-size: 0.75rem;">
-                    <!-- Injected rows -->
+                <div class="time-readout"
+                    style="margin-top: 1rem; text-align: center; font-size: 0.8rem; color: #00f0ff;">
+                    SIM CLOCK: <span id="sim-clock-display">LIVE</span>
                 </div>
             </aside>
 
-            <!-- Human Oversight Panel -->
-            <aside class="panel bottom-right-panel"
-                style="position: absolute; bottom: 2rem; right: 2rem; width: 320px; border-bottom: 3px solid #bbaaff;">
-                <div class="panel-header element-flex"
-                    style="color:#bbaaff; border-bottom-color: rgba(187,170,255,0.2); margin-bottom: 0.5rem;">
-                    <span>HUMAN OVERSIGHT MODULE</span>
-                    <span class="live-badge" style="border-color:#bbaaff; color: #bbaaff;">PENDING: <span
-                            id="oversight-count">0</span></span>
+        </div>
+
+        <!-- Bottom Quick Action Bar -->
+        <div id="bottom-bar-ribbon" class="bottom-action-bar">
+            <div class="ribbon-group">
+                <button id="nav-global" class="ribbon-btn active-nav neptune-tooltip"
+                    data-tooltip="Global Curvature Mode"
+                    data-tooltip-short="Switch camera and system visualization modes."
+                    data-tooltip-tech="Changes operational view without affecting system logic."
+                    data-tooltip-use="View the entire 1900km corridor.">
+                    <span class="btn-icon">🌐</span> GLOBAL OVERVIEW
+                </button>
+                <button id="nav-sector" class="ribbon-btn neptune-tooltip" data-tooltip="Sector Mode"
+                    data-tooltip-short="Switch camera and system visualization modes."
+                    data-tooltip-tech="Changes operational view without affecting system logic."
+                    data-tooltip-use="Zoom to specific operating sectors.">
+                    <span class="btn-icon">🗺️</span> SECTOR FOCUS
+                </button>
+                <button id="nav-inspection" class="ribbon-btn neptune-tooltip" data-tooltip="Inspection Mode"
+                    data-tooltip-short="Switch camera and system visualization modes."
+                    data-tooltip-tech="Changes operational view without affecting system logic."
+                    data-tooltip-use="Close-up seabed visualization.">
+                    <span class="btn-icon">🔎</span> INSPECTION
+                </button>
+            </div>
+
+            <div class="ribbon-telemetry neptune-tooltip" data-tooltip="Corridor Span">
+                <span class="tel-label">MUNDRA [KP 0]</span>
+                <span class="tel-divider">-------------</span>
+                <span class="tel-label">FUJAIRAH [KP 1900]</span>
+            </div>
+
+            <div class="ribbon-group right-align">
+                <div class="ribbon-control neptune-tooltip" data-tooltip="Visual Debug Toggle"
+                    data-tooltip-short="Enable to hover components and view data.">
+                    <label class="layer-toggle"
+                        style="background: rgba(255,100,0,0.1); border: 1px solid rgba(255,100,0,0.3); margin:0;">
+                        <input type="checkbox" id="mode-debug">
+                        <span class="toggle-box" style="border-color: orange;"></span>
+                        <span class="layer-name" style="color: orange; font-weight: bold;">DEBUG</span>
+                    </label>
                 </div>
-                <div id="oversight-list"
-                    style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 150px; overflow-y: auto;">
-                    <div style="font-size: 0.75rem; color: var(--text-secondary); text-align: center; padding: 1rem;">No
-                        pending approvals</div>
+                <div class="ribbon-control neptune-tooltip" data-tooltip="HQ Render Mode"
+                    data-tooltip-short="Toggle volumetric caustics and particle density.">
+                    <label class="layer-toggle"
+                        style="background: rgba(0,255,200,0.1); border: 1px solid rgba(0,255,200,0.3); margin:0;">
+                        <input type="checkbox" id="hq-render" checked>
+                        <span class="toggle-box" style="border-color: #00ffc8;"></span>
+                        <span class="layer-name" style="color: #00ffc8; font-weight: bold;">HQ VISUALS</span>
+                    </label>
                 </div>
-            </aside>
+                <div class="ribbon-control neptune-tooltip" data-tooltip="Time Dilation"
+                    data-tooltip-short="Speed up the simulation clock.">
+                    <label>DILATION <span id="dilation-val">1000x</span></label>
+                    <input type="range" id="time-dilation" min="1" max="10000" value="1000" style="width:100px;">
+                </div>
+            </div>
         </div>
 
         <!-- Human Approval Modal -->
-        <div id="human-approval-modal" class="panel hidden"
-            style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; border-color: var(--color-critical); background: rgba(20, 0, 0, 0.95); width: 450px;">
+        <div id="human-approval-modal" class="modal-critical hidden">
             <div class="panel-header warning-text element-flex"
                 style="color: var(--color-critical); border-bottom-color: var(--color-critical);">
                 <span>⚠️ CRITICAL STRUCTURAL RISK DETECTED</span>
@@ -430,12 +633,24 @@
                 style="margin-bottom: 20px; font-family: var(--font-log); font-size: 0.85rem; line-height: 1.6; color: var(--text-primary);">
             </div>
             <div class="buttons" style="flex-direction: column; gap: 10px;">
-                <button id="btn-approve-multi" class="btn critical-btn">Approve Isolation + Multi-AUV
+                <button id="btn-approve-multi" class="btn critical-btn neptune-tooltip" data-tooltip="Isolation Control"
+                    data-tooltip-short="Temporarily close upstream and downstream valves."
+                    data-tooltip-tech="Prevents escalation of structural damage."
+                    data-tooltip-use="Execute immediately upon critical threshold breach.">Approve Isolation +
+                    Multi-AUV
                     Deployment</button>
                 <button id="btn-escalate-shutdown" class="btn warning-btn">Escalate to Full Shutdown</button>
                 <button id="btn-manual-override" class="btn">Manual Override (Monitor Only)</button>
             </div>
         </div>
+    </div>
+
+    <!-- Tooltip Element -->
+    <div id="universal-tooltip" class="universal-tooltip hidden">
+        <div class="tooltip-title" id="tt-title"></div>
+        <div class="tooltip-line" id="tt-line1"></div>
+        <div class="tooltip-line" id="tt-line2"></div>
+        <div class="tooltip-line" id="tt-line3"></div>
     </div>
 
     <!-- UI Overlay for 2D Canvas Text labels (KP Markers, Stations) -->
@@ -454,6 +669,8 @@
         <div class="debug-metric"><span>Health State:</span> <span id="debug-health" class="nominal-text">NORMAL</span>
         </div>
         <div class="debug-metric"><span>Uncertainty:</span> <span id="debug-uncertainty">0.00</span></div>
+    </div>
+
     </div>
 
     <script src="script.js"></script>

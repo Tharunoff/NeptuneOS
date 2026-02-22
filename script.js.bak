@@ -6,20 +6,9 @@
 const R_EARTH = 6371; // km
 const MAX_LENGTH = 1900; // km
 
-// Phase 12: Predictive Time Simulation Engine
-let simulationTimeMs = Date.now();
-let simulationMultiplier = 1;
-let isSandboxMode = false;
-let sandboxTimeMs = Date.now();
-let lastRealTimeMs = Date.now();
-
-function getSimTime() {
-    return isSandboxMode ? sandboxTimeMs : simulationTimeMs;
-}
-
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x020813);
-scene.fog = new THREE.FogExp2(0x020813, 0.0015); // Global deep fog with attenuation
+scene.fog = new THREE.FogExp2(0x020813, 0.0005); // Global deep fog
 
 // Logarithmic depth buffer is critical for planetary scale
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 50000);
@@ -35,92 +24,6 @@ scene.add(ambientLight);
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
 dirLight.position.set(R_EARTH * 1.5, R_EARTH * 1.5, R_EARTH * 1.5);
 scene.add(dirLight);
-
-// Phase 10: Physically Based Water Surface (PBR)
-const waterGeo = new THREE.SphereGeometry(R_EARTH, 128, 128);
-const waterMat = new THREE.MeshPhysicalMaterial({
-    color: 0x0a1e3f,
-    metalness: 0.9,
-    roughness: 0.1,
-    transmission: 0.8, // glass-like refraction
-    ior: 1.33,         // index of refraction for water
-    transparent: true,
-    opacity: 0.8,
-    side: THREE.DoubleSide
-});
-
-// Add custom shader hook for surface waves
-waterMat.onBeforeCompile = (shader) => {
-    shader.uniforms.uTime = { value: 0 };
-    waterMat.userData.shader = shader;
-
-    shader.vertexShader = shader.vertexShader.replace(
-        '#include <common>',
-        `#include <common>
-         uniform float uTime;
-         
-         // Simple 3D noise for waves
-         float hash( vec3 p ) { return fract(sin(dot(p, vec3(12.9898, 78.233, 151.7182))) * 43758.5453); }
-         float noise( vec3 x ) {
-            vec3 p = floor(x);
-            vec3 f = fract(x);
-            f = f*f*(3.0-2.0*f);
-            return mix(mix(mix( hash(p+vec3(0,0,0)), hash(p+vec3(1,0,0)),f.x),
-                           mix( hash(p+vec3(0,1,0)), hash(p+vec3(1,1,0)),f.x),f.y),
-                       mix(mix( hash(p+vec3(0,0,1)), hash(p+vec3(1,0,1)),f.x),
-                           mix( hash(p+vec3(0,1,1)), hash(p+vec3(1,1,1)),f.x),f.y),f.z);
-         }`
-    );
-
-    shader.vertexShader = shader.vertexShader.replace(
-        '#include <begin_vertex>',
-        `#include <begin_vertex>
-         // Add subtle wave displacement
-         float wave = noise(position * 50.0 + uTime * 0.5) * 0.002;
-         transformed += normalize(position) * wave;
-        `
-    );
-};
-const waterMesh = new THREE.Mesh(waterGeo, waterMat);
-scene.add(waterMesh);
-
-// Phase 9: Global Marine Snow / Particulates
-const snowCount = 4000;
-const snowGeo = new THREE.BufferGeometry();
-const snowPos = new Float32Array(snowCount * 3);
-for (let i = 0; i < snowCount * 3; i++) {
-    snowPos[i] = (Math.random() - 0.5) * 50; // Spread around camera local
-}
-snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
-const snowMat = new THREE.PointsMaterial({
-    color: 0x88ccff,
-    size: 0.05,
-    transparent: true,
-    opacity: 0.6,
-    blending: THREE.AdditiveBlending
-});
-const marineSnow = new THREE.Points(snowGeo, snowMat);
-scene.add(marineSnow);
-
-// Phase 9: Array for temporary localized dust clouds
-const activeDustClouds = [];
-function spawnSedimentCloud(lat, lon, depthKm) {
-    const pos = latLonToVector3(lat, lon, depthKm);
-    const dustGeo = new THREE.BufferGeometry();
-    const count = 500;
-    const posArr = new Float32Array(count * 3);
-    for (let i = 0; i < count * 3; i++) {
-        posArr[i] = pos.toArray()[i % 3] + (Math.random() - 0.5) * 0.2;
-    }
-    dustGeo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
-    const dustMat = new THREE.PointsMaterial({
-        color: 0xaaaaaa, size: 0.1, transparent: true, opacity: 0.8,
-        blending: THREE.NormalBlending
-    });
-    const dust = new THREE.Points(dustGeo, dustMat);
-    scene.add(dust);
-    activeDustClouds.push({ mesh: dust, age: 0 });
-}
 
 // --------------------------------------------------------
 // 2. WGS84 & BATHYMETRY MATH UTILS
@@ -240,25 +143,6 @@ class SegmentNode {
         this.health_state = "healthy";
         this.uncertainty_buffer = 0.0;
         this.sensor_cluster = new SensorCluster();
-
-        // --- Phase 11: Security & Protection ---
-        this.threat_score = 0; // 0-100
-        this.threat_type = null;
-        this.threat_active = false;
-        this.threat_ring = null; // THREE.Mesh reference for visual indicator
-
-        // --- Environmental Physics ---
-        // Depth-Pressure Stress Model
-        const water_density = 1025; // kg/m^3 for seawater
-        const gravity = 9.81; // m/s^2
-        this.hydrostatic_pressure = water_density * gravity * (depth * 1000); // Pascals
-        this.latent_stress_multiplier = (depth > 2.0) ? 1.5 : 1.0; // Deep basin segments have higher baseline structural stress
-        this.biofouling_level = 0.0; // Scales drag and corrosion
-
-        // --- Phase 12: Predictive Time Simulation ---
-        this.corrosion_level = 0.0;
-        this.stress_accumulation = 0.0;
-        this.ttf_days = 9999;
     }
 }
 
@@ -270,159 +154,6 @@ class SectorDataNode {
         this.aggregated_variance = 0.0;
         this.active_segments = 0;
         this.resident_station_id = stationId;
-
-        // --- Environmental Physics Defaults ---
-        this.current_speed = 0.0; // knots
-        this.current_direction = 1; // 1 = with KP, -1 = against KP
-        this.turbulence_factor = 0.0;
-        this.turbidity = 'Low'; // Low, Moderate, High
-        this.seismic_activity = 0.0;
-        this.biofouling_rate = 0.01;
-        this.environmental_stress_score = 0;
-    }
-}
-
-// --------------------------------------------------------
-// 2.5.1 PREDICTIVE TIME ENGINE LOGIC (PHASE 12)
-// --------------------------------------------------------
-const preventiveAlerts = {}; // Store active UUID alerts
-
-function updatePredictiveEngine(dtSimMs) {
-    // Convert ms to simulation days to scale the slow degradation properly
-    const simDays = dtSimMs / (1000 * 60 * 60 * 24);
-    if (simDays <= 0) return;
-
-    for (const assetType in digitalTwinDB.assets) {
-        digitalTwinDB.assets[assetType].forEach(seg => {
-            const sector = digitalTwinDB.sectors[seg.sector_id];
-
-            // Degradation Math: Corrosion driven by depth/salinity and biofouling. 
-            // Biofouling driven by sector rate.
-            seg.biofouling_level += sector.biofouling_rate * simDays * 0.1;
-            seg.biofouling_level = Math.min(1.0, seg.biofouling_level); // Cap at 100%
-
-            // Corrosion factor
-            const baseCorrosionRate = 0.001; // Base per day
-            seg.corrosion_level += (baseCorrosionRate + (seg.biofouling_level * 0.005)) * simDays;
-            seg.corrosion_level = Math.min(1.0, seg.corrosion_level);
-
-            // Stress accumulation (fatigue)
-            const currentStress = (sector.current_speed + sector.turbulence_factor);
-            seg.stress_accumulation += (currentStress * seg.latent_stress_multiplier * 0.01) * simDays;
-
-            // Health State Evaluation (Structural Integrity SI)
-            // SI = 1.0 (perfect) down to 0.0 (failure)
-            const structuralIntegrity = Math.max(0.0, 1.0 - (seg.corrosion_level * 0.6) - (seg.stress_accumulation * 0.4));
-
-            if (structuralIntegrity < 0.4) seg.health_state = 'critical';
-            else if (structuralIntegrity < 0.7) seg.health_state = 'warning';
-            else seg.health_state = 'healthy';
-
-            // Calculate Time To Failure (TTF) in days
-            // Estimate remaining SI divided by current daily degradation rate
-            const degradationPDay = ((baseCorrosionRate + (seg.biofouling_level * 0.005)) * 0.6) +
-                ((currentStress * seg.latent_stress_multiplier * 0.01) * 0.4);
-            seg.ttf_days = degradationPDay > 0 ? (structuralIntegrity - 0.2) / degradationPDay : 9999;
-
-            // Generate "Pre-Failure Risk Zone" Recommendation Object if < 30 days
-            if (seg.ttf_days < 30 && seg.ttf_days > 0 && !preventiveAlerts[seg.segment_id]) {
-                preventiveAlerts[seg.segment_id] = {
-                    kp: seg.kp_start,
-                    predicted_failure: Math.floor(seg.ttf_days),
-                    action: structuralIntegrity < 0.5 ? 'Reinforcement Clamp' : 'Preventive Inspection',
-                    urgency: structuralIntegrity < 0.5 ? 'CRITICAL' : 'HIGH'
-                };
-                updatePreventiveUI();
-            } else if (seg.ttf_days > 30 && preventiveAlerts[seg.segment_id]) {
-                delete preventiveAlerts[seg.segment_id]; // healed/reversed in sandbox
-                updatePreventiveUI();
-            }
-        });
-    }
-    updateRiskGraph();
-}
-
-function updateRiskGraph() {
-    let avgSI_now = 0, count = 0;
-    for (const assetType in digitalTwinDB.assets) {
-        digitalTwinDB.assets[assetType].forEach(seg => {
-            const si = Math.max(0.0, 1.0 - (seg.corrosion_level * 0.6) - (seg.stress_accumulation * 0.4));
-            avgSI_now += si;
-            count++;
-        });
-    }
-    if (count === 0) return;
-    avgSI_now /= count;
-
-    function projectSIAvg(daysToAdd) {
-        let avgSI = 0;
-        for (const assetType in digitalTwinDB.assets) {
-            digitalTwinDB.assets[assetType].forEach(seg => {
-                const sector = digitalTwinDB.sectors[seg.sector_id];
-                const futureBio = Math.min(1.0, seg.biofouling_level + (sector.biofouling_rate * daysToAdd * 0.1));
-                const futureCorr = Math.min(1.0, seg.corrosion_level + ((0.001 + (futureBio * 0.005)) * daysToAdd));
-                const currentStress = (sector.current_speed + sector.turbulence_factor);
-                const futureStress = seg.stress_accumulation + ((currentStress * seg.latent_stress_multiplier * 0.01) * daysToAdd);
-                const si = Math.max(0.0, 1.0 - (futureCorr * 0.6) - (futureStress * 0.4));
-                avgSI += si;
-            });
-        }
-        return avgSI / count;
-    }
-
-    const m = 100; // Multiplier to make it look a bit more pronounced if needed, but 100 is pure percentage
-    const risk_now = Math.min(100, Math.max(2, (1.0 - avgSI_now) * m));
-    const risk_6h = Math.min(100, Math.max(2, (1.0 - projectSIAvg(0.25)) * m));
-    const risk_24h = Math.min(100, Math.max(2, (1.0 - projectSIAvg(1.0)) * m));
-    const risk_7d = Math.min(100, Math.max(2, (1.0 - projectSIAvg(7.0)) * m));
-
-    const barNow = document.getElementById('risk-bar-now');
-    const bar6h = document.getElementById('risk-bar-6h');
-    const bar24h = document.getElementById('risk-bar-24h');
-    const bar7d = document.getElementById('risk-bar-7d');
-
-    if (barNow) {
-        barNow.style.height = `${risk_now}%`;
-        barNow.style.background = risk_now < 30 ? '#00ff88' : (risk_now < 70 ? '#ffcc00' : '#ff3b3b');
-        bar6h.style.height = `${risk_6h}%`;
-        bar6h.style.background = risk_6h < 30 ? '#00ccff' : (risk_6h < 70 ? '#ffcc00' : '#ff3b3b');
-        bar24h.style.height = `${risk_24h}%`;
-        bar24h.style.background = risk_24h < 30 ? '#00ccff' : (risk_24h < 70 ? '#ffcc00' : '#ff3b3b');
-        bar7d.style.height = `${risk_7d}%`;
-        bar7d.style.background = risk_7d < 30 ? '#00ccff' : (risk_7d < 70 ? '#ffcc00' : '#ff3b3b');
-    }
-}
-
-function updatePreventiveUI() {
-    const list = document.getElementById('preventive-list');
-    if (!list) return;
-
-    let html = '';
-    const alerts = Object.values(preventiveAlerts).sort((a, b) => a.predicted_failure - b.predicted_failure);
-
-    alerts.forEach(alert => {
-        let color = alert.urgency === 'CRITICAL' ? '#ff3b3b' : '#ff9900';
-        html += `
-            <div style="border-left: 3px solid ${color}; padding-left: 0.5rem; margin-bottom: 0.8rem; background:rgba(0,0,0,0.3); padding: 0.5rem;">
-                <div class="element-flex">
-                    <strong style="color:${color}">TTF: ${alert.predicted_failure} Days</strong>
-                    <span style="font-size:0.75rem; color:var(--text-secondary);">KP ${Math.floor(alert.kp)}</span>
-                </div>
-                <div style="font-size:0.75rem; margin-top:0.25rem;">
-                    ACTION: <span style="color:#00f0ff">${alert.action}</span>
-                </div>
-            </div>
-        `;
-    });
-
-    if (html === '') {
-        list.innerHTML = '<div class="empty-state" style="color:var(--text-secondary); text-align:center; font-size:0.75rem;">No preemptive risks forecasted.</div>';
-    } else {
-        list.innerHTML = html;
-        const panelHeader = list.previousElementSibling;
-        if (alerts.length > 0) {
-            panelHeader.innerHTML = `INTELLIGENCE <span class="warning-text">(${alerts.length} ALERTS)</span>`;
-        }
     }
 }
 
@@ -462,239 +193,7 @@ class ActiveHazard {
 }
 
 // --------------------------------------------------------
-// 2.7. STRATEGIC INFRASTRUCTURE SECURITY (PHASE 11)
-// --------------------------------------------------------
-const THREAT_TYPES = {
-    ROV_PROXIMITY: 'Unauthorized ROV',
-    ANCHOR_DROP: 'Suspicious Anchor Drop',
-    CABLE_INTERFERENCE: 'Cable Interference',
-    SENSOR_SPOOF: 'Sensor Spoofing',
-    ILLEGAL_TAPPING: 'Illegal Tapping',
-    VESSEL_LOITER: 'Vessel Loitering',
-    MULTI_POINT: 'Multi-Point Anomaly'
-};
-
-const ALERT_LEVELS = {
-    GREEN: 'Normal',
-    AMBER: 'Suspicious',
-    RED: 'Confirmed Threat'
-};
-
-const activeVessels = [];
-const incidentTimeline = [];
-let securityHFActive = false;
-
-class SurfaceVessel {
-    constructor(id, kpStart) {
-        this.vessel_id = id;
-        this.kp = kpStart;
-        this.speed = (Math.random() * 10) + 5; // knots
-        this.heading = Math.random() > 0.5 ? 1 : -1;
-        this.anchor_status = false;
-        this.loiter_time = 0;
-        this.distance_to_pipeline = Math.random() * 2000; // meters offset
-        this.is_suspicious = false;
-    }
-}
-
-// Initialize some surface vessels for the simulation
-for (let i = 0; i < 4; i++) {
-    activeVessels.push(new SurfaceVessel('VESSEL-' + Math.floor(Math.random() * 9000 + 1000), Math.random() * MAX_LENGTH));
-}
-
-function logSecurityIncident(kp, type, vesselId, evidence, status) {
-    const now = new Date();
-    const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-    incidentTimeline.unshift({ time, kp: Math.floor(kp), type, vesselId, evidence, status });
-    if (incidentTimeline.length > 50) incidentTimeline.pop();
-    updateSecurityPanel();
-}
-
-function triggerThreatEvent(kp, type, vesselId, baseScore) {
-    // Apply threat locally to the closest segment (we'll use gas_a as primary backbone)
-    const segs = digitalTwinDB.assets['gas_a'];
-    const seg = segs[Math.floor(kp)];
-    if (!seg || seg.threat_active) return; // already active
-
-    seg.threat_type = type;
-    seg.threat_score = Math.min(100, baseScore + (Math.random() * 20));
-    seg.threat_active = true;
-
-    let evidence = 'Detected anomaly signature.';
-    if (type === THREAT_TYPES.ANCHOR_DROP) evidence = `Vessel stationary over corridor > 10m.`;
-    if (type === THREAT_TYPES.SENSOR_SPOOF) evidence = `Pressure normal but vibration extreme. Profile mismatch.`;
-    if (type === THREAT_TYPES.ILLEGAL_TAPPING) evidence = `Mechanical periodic cutting acoustic signature detected.`;
-
-    logSecurityIncident(kp, type, vesselId, evidence, 'OPEN');
-
-    // Phase 11 Visual Indicators: Subtle red perimeter ring
-    const pos = latLonToVector3(seg.latitude, seg.longitude, seg.depth);
-    const geo = new THREE.RingGeometry(0.3, 0.35, 32);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xff3b3b, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
-    const ring = new THREE.Mesh(geo, mat);
-    ring.position.copy(pos);
-    ring.lookAt(new THREE.Vector3(0, 0, 0)); // Align with gravity (point Z towards center of earth)
-    ring.position.add(new THREE.Vector3(0, 0, 0).copy(pos).normalize().multiplyScalar(0.01)); // Lift slightly off seabed
-
-    scene.add(ring);
-    seg.threat_ring = ring;
-}
-
-function clearThreatEvent(seg) {
-    seg.threat_active = false;
-    seg.threat_score = 0;
-    seg.threat_type = null;
-    if (seg.threat_ring) {
-        scene.remove(seg.threat_ring);
-        seg.threat_ring.geometry.dispose();
-        seg.threat_ring.material.dispose();
-        seg.threat_ring = null;
-    }
-}
-
-function updateSecurityEngine() {
-    // 1. Vessel Proximity & Loitering Model
-    activeVessels.forEach(v => {
-        if (!v.anchor_status) {
-            v.kp += (v.speed / 3600) * v.heading * 50; // Accelerated time for simulation
-            if (v.kp < 0 || v.kp > MAX_LENGTH) v.heading *= -1;
-
-            // Randomly drop anchor near pipeline
-            if (Math.random() < 0.05 && v.distance_to_pipeline < 1000) {
-                v.anchor_status = true;
-                v.speed = 0;
-            }
-        } else {
-            v.loiter_time += 60; // Simulate 1 minute per tick
-            if (v.loiter_time > 600 && v.distance_to_pipeline <= 500 && !v.is_suspicious) { // > 10 mins
-                v.is_suspicious = true;
-                triggerThreatEvent(v.kp, THREAT_TYPES.ANCHOR_DROP, v.vessel_id, 45); // Amber to Red
-            }
-            // Lift anchor randomly
-            if (Math.random() < 0.1) {
-                v.anchor_status = false;
-                v.speed = (Math.random() * 10) + 5;
-                v.loiter_time = 0;
-
-                // Clear threat if it was active
-                if (v.is_suspicious) {
-                    v.is_suspicious = false;
-                    const seg = digitalTwinDB.assets['gas_a'][Math.floor(v.kp)];
-                    if (seg && seg.threat_active && seg.threat_type === THREAT_TYPES.ANCHOR_DROP) {
-                        clearThreatEvent(seg);
-                        logSecurityIncident(v.kp, THREAT_TYPES.ANCHOR_DROP, v.vessel_id, 'Vessel anchor lifted and departed.', 'RESOLVED');
-                    }
-                }
-            }
-        }
-    });
-
-    // 2. Acoustic Signature Classifier & 3. Sensor Spoof Detection
-    if (Math.random() < 0.03) {
-        const kp = Math.floor(Math.random() * MAX_LENGTH);
-        const randType = Math.random();
-
-        if (randType > 0.8) {
-            triggerThreatEvent(kp, THREAT_TYPES.ILLEGAL_TAPPING, 'UNKNOWN', 85); // High threat
-        } else if (randType > 0.6) {
-            triggerThreatEvent(kp, THREAT_TYPES.SENSOR_SPOOF, 'UNKNOWN', 75); // High threat
-        } else if (randType > 0.4) {
-            triggerThreatEvent(kp, THREAT_TYPES.ROV_PROXIMITY, 'UNKNOWN', 50); // Medium threat
-        }
-    }
-
-    updateSecurityPanel();
-}
-setInterval(updateSecurityEngine, 2000); // Run security loop every 2 seconds
-
-// Security UI Response Actions
-window.dispatchSecurityAUV = function () {
-    alertModal("SECURITY ACTION", "Investigation AUV dispatched to nearest active threat sector. ETA: 4m 30s.");
-    logSecurityIncident(0, 'RESPONSE', 'USER', 'Investigation AUV Dispatched', 'LOGGED');
-};
-window.activateIsolation = function () {
-    alertModal("SECURITY ACTION", "Isolation Pre-check activated. Valves standing by for critical lock.");
-    logSecurityIncident(0, 'RESPONSE', 'USER', 'Isolation Pre-check Initialized', 'LOGGED');
-};
-window.escalateToCoastGuard = function () {
-    alertModal("ESCALATION", "Sector coordinates transmitted to regional Coast Guard command.");
-    logSecurityIncident(0, 'RESPONSE', 'USER', 'Coast Guard Escalation Triggered', 'LOGGED');
-};
-window.enableHFAcoustics = function () {
-    securityHFActive = !securityHFActive;
-    alertModal("SENSOR ARRAY", `High-Frequency Acoustic Monitoring algorithms ${securityHFActive ? 'ENABLED' : 'DISABLED'}.`);
-    logSecurityIncident(0, 'RESPONSE', 'USER', `HF Acoustics ${securityHFActive ? 'Enabled' : 'Disabled'}`, 'LOGGED');
-};
-window.lockDownSector = function () {
-    alertModal("CRITICAL", "SECTOR LOCKDOWN INITIATED. Pipeline flow reduced. Surveillance maximised.");
-    logSecurityIncident(0, 'RESPONSE', 'USER', 'SECTOR LOCKDOWN COMMAND', 'CRITICAL');
-};
-
-function updateSecurityPanel() {
-    const threatList = document.getElementById('active-threats-list');
-    const logList = document.getElementById('forensic-log-list');
-    if (!threatList || !logList) return;
-
-    let activeHtml = '';
-    let highestScore = 0;
-
-    // Scan for active threats
-    for (let asset in digitalTwinDB.assets) {
-        digitalTwinDB.assets[asset].forEach(seg => {
-            if (seg.threat_active) {
-                if (seg.threat_score > highestScore) highestScore = seg.threat_score;
-
-                const alertClass = seg.threat_score >= 70 ? 'critical-text' : 'warning-text';
-                const borderColor = seg.threat_score >= 70 ? '#ff3b3b' : '#ffcc00';
-
-                activeHtml += `
-                    <div style="border-left: 3px solid ${borderColor}; padding-left: 0.5rem; margin-bottom: 0.8rem; background:rgba(0,0,0,0.3); padding: 0.5rem;">
-                        <div class="element-flex">
-                            <strong class="${alertClass}">${seg.threat_type}</strong>
-                            <span style="font-size:0.75rem; color:var(--text-secondary);">KP ${Math.floor(seg.kp_start)}</span>
-                        </div>
-                        <div class="element-flex" style="font-size:0.75rem; margin-top:0.25rem;">
-                            <span>Score: ${Math.floor(seg.threat_score)}/100</span>
-                            <span class="${alertClass}">Sector ${seg.sector_id}</span>
-                        </div>
-                    </div>
-                `;
-            }
-        });
-    }
-
-    if (activeHtml === '') {
-        threatList.innerHTML = '<div class="empty-state" style="color:var(--text-secondary); text-align:center; font-size:0.75rem;">System Secure.<br>No active threats.</div>';
-    } else {
-        threatList.innerHTML = activeHtml;
-        const panelHeader = threatList.previousElementSibling;
-        if (highestScore >= 70) {
-            panelHeader.innerHTML = `ACTIVE THREATS <span class="critical-text blink">CRITICAL (${Math.floor(highestScore)})</span>`;
-        } else {
-            panelHeader.innerHTML = `ACTIVE THREATS <span class="warning-text">SUSPICIOUS (${Math.floor(highestScore)})</span>`;
-        }
-    }
-
-    // Update Logs
-    let logHtml = '';
-    incidentTimeline.forEach(log => {
-        let statusStyle = 'color: #00ff88;';
-        if (log.status === 'OPEN') statusStyle = 'color: #ff3b3b;';
-        if (log.status === 'CRITICAL') statusStyle = 'color: #ff3b3b; font-weight:bold;';
-        if (log.type === 'RESPONSE') statusStyle = 'color: #00f0ff;';
-
-        logHtml += `<div style="margin-bottom:0.75rem;">
-            <span class="text-muted">[${log.time}]</span> 
-            <strong style="${statusStyle}">${log.type}</strong> ${log.kp > 0 ? `at KP ${log.kp}` : ''} 
-            ${log.vesselId !== 'UNKNOWN' && log.vesselId !== 'USER' ? `| ID: ${log.vesselId}` : ''}<br>
-            <span style="color:var(--text-secondary); margin-left:0.5rem; font-size:0.7rem;">> ${log.evidence}</span>
-        </div>`;
-    });
-    logList.innerHTML = logHtml;
-}
-
-// --------------------------------------------------------
-// 2.8. AUV PHYSICS & MISSION ENGINE (PHASE 5)
+// 2.7. AUV PHYSICS & MISSION ENGINE (PHASE 5)
 // --------------------------------------------------------
 class AUVNode {
     constructor(id, homeStationKp) {
@@ -752,35 +251,6 @@ function determineSector(kp) {
     return 'D';
 }
 
-// Initialize specific Sector Environments
-digitalTwinDB.sectors['A'].current_speed = 0.5;
-digitalTwinDB.sectors['A'].current_direction = 1; // along KP
-digitalTwinDB.sectors['A'].turbulence_factor = 0.2;
-digitalTwinDB.sectors['A'].turbidity = 'High'; // Coastal
-digitalTwinDB.sectors['A'].seismic_activity = 0.05;
-digitalTwinDB.sectors['A'].biofouling_rate = 0.08; // High near coast
-
-digitalTwinDB.sectors['B'].current_speed = 2.5; // Strong deep basin currents
-digitalTwinDB.sectors['B'].current_direction = -1; // against KP
-digitalTwinDB.sectors['B'].turbulence_factor = 0.8;
-digitalTwinDB.sectors['B'].turbidity = 'Low';
-digitalTwinDB.sectors['B'].seismic_activity = 0.3;
-digitalTwinDB.sectors['B'].biofouling_rate = 0.005; // Low at depth
-
-digitalTwinDB.sectors['C'].current_speed = 1.2;
-digitalTwinDB.sectors['C'].current_direction = 1;
-digitalTwinDB.sectors['C'].turbulence_factor = 0.4;
-digitalTwinDB.sectors['C'].turbidity = 'Moderate';
-digitalTwinDB.sectors['C'].seismic_activity = 0.1;
-digitalTwinDB.sectors['C'].biofouling_rate = 0.02;
-
-digitalTwinDB.sectors['D'].current_speed = 0.8;
-digitalTwinDB.sectors['D'].current_direction = -1;
-digitalTwinDB.sectors['D'].turbulence_factor = 0.3;
-digitalTwinDB.sectors['D'].turbidity = 'Moderate';
-digitalTwinDB.sectors['D'].seismic_activity = 0.02;
-digitalTwinDB.sectors['D'].biofouling_rate = 0.04;
-
 // --------------------------------------------------------
 // 3. LAYER GROUPS & ASSET GENERATION
 // --------------------------------------------------------
@@ -833,70 +303,11 @@ seabedGeo.computeVertexNormals();
 
 const seabedMat = new THREE.MeshStandardMaterial({
     vertexColors: true,
-    roughness: 0.95,
-    metalness: 0.05,
+    roughness: 0.9,
+    metalness: 0.1,
     side: THREE.DoubleSide,
     wireframe: false
 });
-
-// Add custom shader hook for Phase 10: Seabed Micro-Texture Noise and Caustics
-seabedMat.onBeforeCompile = (shader) => {
-    shader.uniforms.uTime = { value: 0 };
-    shader.uniforms.uHQ = { value: 1.0 }; // Togglable via UI later
-    // Pass time varying uniforms
-    seabedMat.userData.shader = shader;
-
-    shader.vertexShader = shader.vertexShader.replace(
-        '#include <common>',
-        `#include <common>
-         varying vec3 vWorldPos;`
-    );
-    shader.vertexShader = shader.vertexShader.replace(
-        '#include <worldpos_vertex>',
-        `#include <worldpos_vertex>
-         vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
-    );
-
-    shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <common>',
-        `#include <common>
-         varying vec3 vWorldPos;
-         uniform float uTime;
-         uniform float uHQ;
-         
-         // Simple 3D noise
-         float hash( vec3 p ) { return fract(sin(dot(p, vec3(12.9898, 78.233, 151.7182))) * 43758.5453); }
-         float noise( vec3 x ) {
-            vec3 p = floor(x);
-            vec3 f = fract(x);
-            f = f*f*(3.0-2.0*f);
-            return mix(mix(mix( hash(p+vec3(0,0,0)), hash(p+vec3(1,0,0)),f.x),
-                           mix( hash(p+vec3(0,1,0)), hash(p+vec3(1,1,0)),f.x),f.y),
-                       mix(mix( hash(p+vec3(0,0,1)), hash(p+vec3(1,0,1)),f.x),
-                           mix( hash(p+vec3(0,1,1)), hash(p+vec3(1,1,1)),f.x),f.y),f.z);
-         }`
-    );
-
-    shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <color_fragment>',
-        `#include <color_fragment>
-         
-         // Micro-texture noise mapping over world position
-         float n1 = noise(vWorldPos * 50.0);
-         float n2 = noise(vWorldPos * 200.0);
-         diffuseColor.rgb *= 0.8 + 0.4 * (n1 * 0.5 + n2 * 0.5);
-
-         // Subsea Caustics (Shallow waters only)
-         if (uHQ > 0.5 && length(vWorldPos) - 6371.0 > -0.05) { // Depth above 50m
-             float causticScale = 500.0;
-             float cNoise = noise(vWorldPos * causticScale + vec3(uTime * 0.2, 0.0, uTime * 0.2));
-             cNoise = pow(cNoise, 3.0) * 1.5;
-             diffuseColor.rgb += vec3(0.1, 0.4, 0.6) * cNoise * 0.5;
-         }
-        `
-    );
-};
-
 const bathymetryMesh = new THREE.Mesh(seabedGeo, seabedMat);
 layers.bathymetry.add(bathymetryMesh);
 
@@ -923,51 +334,10 @@ function createPipeline(curve, radiusKm, colorHex, group, assetId) {
 
     const mat = new THREE.MeshStandardMaterial({
         color: colorHex,
-        roughness: 0.8,
-        metalness: 0.6,
+        roughness: 0.6,
+        metalness: 0.4,
         vertexColors: true // Phase 3: Enable vertex colors for hazard heatmap
     });
-
-    // Phase 10: Deep Sea Pipeline Shader (Weld Seams & Biofouling) using vWorldPos to avoid UV macro issues
-    mat.onBeforeCompile = (shader) => {
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <common>',
-            `#include <common>
-             varying vec3 vWorldPos;`
-        );
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <worldpos_vertex>',
-            `#include <worldpos_vertex>
-             vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
-        );
-
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <common>',
-            `#include <common>
-             varying vec3 vWorldPos;`
-        );
-
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <color_fragment>',
-            `#include <color_fragment>
-             // Use world position distance to draw procedural pipe weld seams
-             float dist = length(vWorldPos);
-             float seamPos = fract(dist * 50.0); // Seams interval
-             float isSeam = step(0.95, seamPos) + step(seamPos, 0.05); // thin rings
-             if (isSeam > 0.0) {
-                 diffuseColor.rgb *= 0.5; // darken seam
-                 diffuseColor.rgb += vec3(0.05); // slight metallic shine at weld
-             }
-             
-             // Procedural rust/biofouling noise based on world position
-             float rustVal = fract(sin(dot(vWorldPos, vec3(12.9898, 78.233, 45.164))) * 43758.5453);
-             if (rustVal > 0.85) {
-                 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.15, 0.1, 0.05), (rustVal - 0.85)*5.0);
-             }
-            `
-        );
-    };
-
     const mesh = new THREE.Mesh(geo, mat);
 
     // Tag the mesh for raycasting and vertex updating
@@ -1063,61 +433,30 @@ stationKPs.forEach((kp, idx) => {
     // Offset by 250m
     const stPos = pt.clone().add(normal.clone().multiplyScalar(0.25));
 
-    // Phase 10: Resident Station Hyper-Detailing
+    // Simple boxy structure representing engineering docking station
     const stGroup = new THREE.Group();
 
-    // Main pressurized hull (Cylinder)
-    const hullGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.2, 16);
-    const hullMat = new THREE.MeshStandardMaterial({ color: 0x445566, metalness: 0.9, roughness: 0.4 });
-    const hull = new THREE.Mesh(hullGeo, hullMat);
-    hull.rotation.z = Math.PI / 2; // lie flat parallel to track
-    hull.position.y = 0.02; // elevate slightly
-    stGroup.add(hull);
-
-    // Support strut bases
-    const baseGeo = new THREE.BoxGeometry(0.12, 0.01, 0.12);
-    const base = new THREE.Mesh(baseGeo, hullMat);
+    // Base
+    const baseGeo = new THREE.BoxGeometry(0.1, 0.02, 0.15); // ~100m long base
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x445566, metalness: 0.8 });
+    const base = new THREE.Mesh(baseGeo, baseMat);
     stGroup.add(base);
 
-    // Endcaps
-    const capGeo = new THREE.SphereGeometry(0.04, 16, 16);
-    const cap1 = new THREE.Mesh(capGeo, hullMat);
-    cap1.position.set(0.1, 0.02, 0);
-    const cap2 = new THREE.Mesh(capGeo, hullMat);
-    cap2.position.set(-0.1, 0.02, 0);
-    stGroup.add(cap1, cap2);
-
-    // Soft status lights (Phase 10 volumetric feel)
-    const lightGeo = new THREE.SphereGeometry(0.01, 8, 8);
-    const lightMatGreen = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-    const lightMatBlue = new THREE.MeshBasicMaterial({ color: 0x0088ff });
-
-    const portL1 = new THREE.Mesh(lightGeo, lightMatGreen);
-    portL1.position.set(-0.06, 0.05, 0.03);
-    const portL2 = new THREE.Mesh(lightGeo, lightMatGreen);
-    portL2.position.set(-0.06, 0.05, -0.03);
-    const portT1 = new THREE.Mesh(lightGeo, lightMatBlue);
-    portT1.position.set(0.06, 0.05, 0);
+    // Glowing port indicators
+    const portGeo = new THREE.BoxGeometry(0.02, 0.02, 0.02);
+    const portL1 = new THREE.Mesh(portGeo, new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
+    portL1.position.set(-0.03, 0.02, 0.05);
+    const portL2 = new THREE.Mesh(portGeo, new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
+    portL2.position.set(-0.03, 0.02, -0.05);
+    const portT1 = new THREE.Mesh(portGeo, new THREE.MeshBasicMaterial({ color: 0x0088ff }));
+    portT1.position.set(0.03, 0.02, 0);
 
     stGroup.add(portL1, portL2, portT1);
 
-    // Add actual faint point lights representing engineering illumination
-    const pLight1 = new THREE.PointLight(0x00ffaa, 1.0, 1.0); // color, intensity, distance
-    pLight1.position.set(-0.06, 0.1, 0.06);
-    const pLight2 = new THREE.PointLight(0x00aaff, 1.0, 1.0);
-    pLight2.position.set(0.06, 0.1, -0.06);
-    stGroup.add(pLight1, pLight2);
-
     // Align tightly to globe
     stGroup.position.copy(stPos);
-
-    // Look tangentionally along the pipe
-    const tangent = masterCurve.getTangent(t).normalize();
-    stGroup.lookAt(stPos.clone().add(tangent));
-
-    // Flatten to surface normal
-    stGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
-    // Add additional rotation to align tangent to local X if needed, handled roughly by structure.
+    stGroup.lookAt(stPos.clone().add(up)); // face UP
+    stGroup.rotateX(Math.PI / 2); // flatten to seabed
 
     layers.stations.add(stGroup);
 });
@@ -1214,24 +553,6 @@ document.getElementById('mode-debug').addEventListener('change', e => {
     if (!debugModeActive) debugTooltip.classList.add('hidden');
 });
 
-// Phase 10: HQ Visuals Toggle State
-let hqVisualsActive = true;
-const hqCheckbox = document.getElementById('hq-render');
-if (hqCheckbox) {
-    hqCheckbox.addEventListener('change', e => {
-        hqVisualsActive = e.target.checked;
-        if (seabedMat.userData.shader) {
-            seabedMat.userData.shader.uniforms.uHQ.value = hqVisualsActive ? 1.0 : 0.0;
-        }
-        // Adjust particle density 
-        if (!hqVisualsActive) {
-            marineSnow.geometry.setDrawRange(0, snowCount * 0.2); // draw only 20%
-        } else {
-            marineSnow.geometry.setDrawRange(0, snowCount);
-        }
-    });
-}
-
 // --- Raycasting for Digital Twin Segments ---
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -1310,55 +631,6 @@ window.addEventListener('mousemove', (event) => {
     }
 });
 
-// Phase 13: Hazard Workflow Logic
-function spawnHazardOverlay(seg, type, isEscalated = false) {
-    if (seg.hazard_overlay) {
-        scene.remove(seg.hazard_overlay);
-        seg.hazard_overlay.geometry.dispose();
-        seg.hazard_overlay.material.dispose();
-        seg.hazard_overlay = null;
-    }
-
-    const tCenter = (seg.kp_start + 0.5) / MAX_LENGTH;
-    const centerPos = masterCurve.getPoint(tCenter);
-    const tangent = masterCurve.getTangent(tCenter).normalize();
-    const up = centerPos.clone().normalize();
-
-    const geo = new THREE.CylinderGeometry(0.015, 0.015, 1.0, 16);
-
-    let colorHex = 0xffff00; // Neon yellow
-    if (isEscalated) colorHex = 0xff0000; // Angry red
-
-    const mat = new THREE.MeshBasicMaterial({
-        color: colorHex,
-        transparent: true,
-        opacity: 0.6,
-        blending: THREE.AdditiveBlending
-    });
-
-    const overlay = new THREE.Mesh(geo, mat);
-    overlay.position.copy(centerPos);
-    overlay.lookAt(centerPos.clone().add(tangent));
-    overlay.rotateX(Math.PI / 2); // Lay flat
-    overlay.position.add(up.multiplyScalar(0.005));
-
-    scene.add(overlay);
-    seg.hazard_overlay = overlay;
-    seg.hazard_color = colorHex;
-    seg.hazard_escalated = isEscalated;
-}
-
-let pendingInvestigation = null;
-let hzTimerInterval = null;
-let hzTimeoutEscalate = null;
-
-function clearHazardToast() {
-    document.getElementById('hazard-notification-toast').classList.add('hidden');
-    clearInterval(hzTimerInterval);
-    clearTimeout(hzTimeoutEscalate);
-    pendingInvestigation = null;
-}
-
 // UI Hazard Injection Hook
 document.getElementById('btn-inject').addEventListener('click', () => {
     const asset = document.getElementById('hz-asset').value;
@@ -1369,97 +641,14 @@ document.getElementById('btn-inject').addEventListener('click', () => {
     const hazard = new ActiveHazard(`HZ_${Date.now()}`, type, asset, kp, severity);
     digitalTwinDB.active_hazards.push(hazard);
 
-    const seg = digitalTwinDB.assets[asset]?.[kp];
-
-    if (type === 'anchor_drag' || type === 'landslide' || type === 'marine_collision') {
-        if (seg) {
-            spawnSedimentCloud(seg.latitude, seg.longitude, seg.depth);
-            seg.sensor_cluster.acoustic.current += 50.0;
-        }
-    }
-
-    if (seg) {
-        spawnHazardOverlay(seg, type, false);
-
-        const toast = document.getElementById('hazard-notification-toast');
-        if (toast && !pendingInvestigation) {
-            pendingInvestigation = { seg, asset, kp, type, severity };
-            toast.classList.remove('hidden');
-            document.getElementById('hz-toast-title').innerText = `⚠️ ${type.toUpperCase().replace('_', ' ')} DETECTED`;
-            document.getElementById('hz-escalating-warning').classList.add('hidden');
-
-            let timeLeft = 10;
-            const timerEl = document.getElementById('hz-toast-timer');
-            timerEl.innerText = `${timeLeft}s`;
-            timerEl.style.color = '#ffcc00';
-
-            hzTimerInterval = setInterval(() => {
-                timeLeft--;
-                timerEl.innerText = `${timeLeft}s`;
-                if (timeLeft <= 0) {
-                    clearInterval(hzTimerInterval);
-                    timerEl.innerText = 'ESCALATING';
-                    timerEl.style.color = '#ff3b3b';
-                    document.getElementById('hz-escalating-warning').classList.remove('hidden');
-
-                    let escTime = 20;
-                    const escTimerEl = document.getElementById('hz-escalate-timer');
-                    escTimerEl.innerText = `${escTime}s`;
-                    hzTimerInterval = setInterval(() => {
-                        escTime--;
-                        escTimerEl.innerText = `${escTime}s`;
-                        if (escTime <= 0) {
-                            clearInterval(hzTimerInterval);
-                            clearHazardToast();
-                            spawnHazardOverlay(seg, type, true);
-                            seg.threat_score = Math.min(100, (seg.threat_score || 0) + 30);
-
-                            const logEl = document.createElement('div');
-                            logEl.className = 'log-entry';
-                            logEl.innerHTML = `<span class="log-timestamp">${new Date(getSimTime()).toISOString().split('T')[1].slice(0, 8)}</span>
-                                               <span class="critical-text">CRITICAL TIMEOUT: AUTO-ESCALATION</span>
-                                               <span>${type.toUpperCase()} @ KP ${kp} | Risk Increased</span>`;
-                            document.getElementById('event-log').prepend(logEl);
-                        }
-                    }, 1000);
-                }
-            }, 1000);
-        }
-    }
-
+    // Log
     const logEl = document.createElement('div');
     logEl.className = 'log-entry';
-    logEl.innerHTML = `<span class="log-timestamp">${new Date(getSimTime()).toISOString().split('T')[1].slice(0, 8)}</span>
+    logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
                        <span class="warning-text">INJECTED: ${type.toUpperCase()}</span>
                        <span>Asset: ${asset.toUpperCase()} @ KP ${kp} | ${severity.toUpperCase()}</span>`;
     document.getElementById('event-log').prepend(logEl);
 });
-
-const btnApprove = document.getElementById('btn-hz-approve');
-if (btnApprove) {
-    btnApprove.addEventListener('click', () => {
-        if (!pendingInvestigation) return;
-        const target = pendingInvestigation;
-        clearHazardToast();
-        currentCriticalTarget = { assetId: target.asset, kp: target.kp };
-        document.getElementById('btn-dispatch-auv').click();
-    });
-}
-const btnDelay = document.getElementById('btn-hz-delay');
-if (btnDelay) {
-    btnDelay.addEventListener('click', () => {
-        clearHazardToast();
-    });
-}
-const btnReject = document.getElementById('btn-hz-reject');
-if (btnReject) {
-    btnReject.addEventListener('click', () => {
-        if (pendingInvestigation && pendingInvestigation.seg.hazard_overlay) {
-            scene.remove(pendingInvestigation.seg.hazard_overlay);
-        }
-        clearHazardToast();
-    });
-}
 
 // AUV Dispatch Logic
 const btnDispatch = document.getElementById('btn-dispatch-auv');
@@ -1480,11 +669,6 @@ btnDispatch.addEventListener('click', () => {
     auv.state = 'UNDOCKING';
 
     digitalTwinDB.active_auvs.push(auv);
-
-    // Phase 10: Generate detailed 3D AUV Mesh
-    const auvGroup = buildAUVMesh(0x00ff88);
-    scene.add(auvGroup);
-    auv.mesh = auvGroup;
 
     const logEl = document.createElement('div');
     logEl.className = 'log-entry';
@@ -1588,11 +772,6 @@ function dispatchRepairAUV(rec, target) {
 
     digitalTwinDB.active_auvs.push(toolAuv);
 
-    // Phase 10: Generate detailed 3D AUV Mesh
-    const auvGroup = buildAUVMesh(0x00aaff); // blue for tool
-    scene.add(auvGroup);
-    toolAuv.mesh = auvGroup;
-
     const logEl = document.createElement('div');
     logEl.className = 'log-entry';
     logEl.innerHTML = `<span class="log-timestamp">${new Date().toISOString().split('T')[1].slice(0, 8)}</span>
@@ -1629,51 +808,6 @@ document.getElementById('time-dilation').addEventListener('input', (e) => {
 // 2.7. DIGITAL TWIN SIMULATION TICK (2Hz)
 // --------------------------------------------------------
 const tmpColor = new THREE.Color();
-
-// Helper to build detailed AUV PBR Mesh (Phase 10)
-function buildAUVMesh(colorHex) {
-    const group = new THREE.Group();
-    // Main Torpedo Body
-    const bodyGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.03, 16);
-    const bodyMat = new THREE.MeshStandardMaterial({ color: colorHex, metalness: 0.8, roughness: 0.3 });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.rotation.z = Math.PI / 2;
-    group.add(body);
-
-    // Nose cap
-    const capGeo = new THREE.SphereGeometry(0.005, 16, 16);
-    const nose = new THREE.Mesh(capGeo, bodyMat);
-    nose.position.x = 0.015;
-    group.add(nose);
-
-    // Tail cap
-    const tail = new THREE.Mesh(capGeo, bodyMat);
-    tail.position.x = -0.015;
-    group.add(tail);
-
-    // Spinner / Thruster
-    const propGeo = new THREE.BoxGeometry(0.002, 0.012, 0.002);
-    const propMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, metalness: 0.9, roughness: 0.2 });
-    const prop = new THREE.Mesh(propGeo, propMat);
-    prop.position.x = -0.018;
-    group.add(prop);
-    group.userData.propeller = prop;
-
-    // Headlight / Nav Light
-    const light = new THREE.PointLight(0xffffff, 1.5, 0.5);
-    light.position.set(0.02, 0, 0);
-    group.add(light);
-
-    // Sonar Pulse Ring (hidden initially)
-    const ringGeo = new THREE.RingGeometry(0.01, 0.012, 32);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.0, side: THREE.DoubleSide });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.y = Math.PI / 2;
-    group.add(ring);
-    group.userData.sonarRing = ring;
-
-    return group;
-}
 
 function updateVertexColors(assetId) {
     const mesh = assetMeshes[assetId];
@@ -1778,32 +912,17 @@ function simulateDigitalTwinTick() {
                 const seg = segments[targetKp];
                 const sc = seg.sensor_cluster;
 
-                const env = digitalTwinDB.sectors[determineSector(targetKp)];
-
                 // Exponential decay of impact based on distance
                 const distanceFactor = Math.exp(-Math.abs(i) / (hazard.profile.radius / 2));
 
-                // Environmental Hazard Modifiers
-                let envModifier = 1.0;
-                if (hazard.type === 'anchor_drag' || hazard.type === 'marine_collision') {
-                    envModifier += (env.current_speed * 0.2); // Currents pull dragging anchors further
-                } else if (hazard.type === 'corrosion') {
-                    envModifier += (env.biofouling_rate * 10); // Biofouling accelerates corrosion
-                } else if (hazard.type === 'seismic') {
-                    envModifier += env.seismic_activity;
-                }
-
-                const appliedDrift = hazard.profile.drift * envModifier;
-                const appliedAccel = hazard.profile.uncertainty_accel * envModifier;
-
                 // Apply physical drifts
-                if (hazard.profile.strain) sc.strain.current += (appliedDrift * hazard.profile.strain * distanceFactor);
-                if (hazard.profile.pressure) sc.pressure.current += (appliedDrift * hazard.profile.pressure * distanceFactor);
-                if (hazard.profile.acoustic) sc.acoustic.current += (appliedDrift * hazard.profile.acoustic * distanceFactor);
-                if (hazard.profile.tilt) sc.tilt.current += (appliedDrift * hazard.profile.tilt * distanceFactor);
+                if (hazard.profile.strain) sc.strain.current += (hazard.profile.drift * hazard.profile.strain * distanceFactor);
+                if (hazard.profile.pressure) sc.pressure.current += (hazard.profile.drift * hazard.profile.pressure * distanceFactor);
+                if (hazard.profile.acoustic) sc.acoustic.current += (hazard.profile.drift * hazard.profile.acoustic * distanceFactor);
+                if (hazard.profile.tilt) sc.tilt.current += (hazard.profile.drift * hazard.profile.tilt * distanceFactor);
 
                 // Increase uncertainty buffer
-                seg.uncertainty_buffer += (appliedAccel * distanceFactor) * 0.1 * SIM_TIME_DILATION / 1000; // time scaled roughly
+                seg.uncertainty_buffer += (hazard.profile.uncertainty_accel * distanceFactor) * 0.1; // 0.1 delta per tick
                 if (seg.uncertainty_buffer > 1.0) seg.uncertainty_buffer = 1.0;
 
                 if (seg.uncertainty_buffer > 0.85 && seg.health_state === 'healthy') {
@@ -1850,29 +969,16 @@ function simulateDigitalTwinTick() {
             sector.stability_index = 100.0 - (sector.aggregated_variance * 100);
             if (sector.stability_index < 0) sector.stability_index = 0;
 
-            // Compute Environmental Stress Index
-            let depth_factor = (secKey === 'B') ? 8.0 : (secKey === 'C' ? 5.0 : 2.0);
-            sector.environmental_stress_score = depth_factor + sector.current_speed + (sector.seismic_activity * 10) + (sector.biofouling_rate * 50);
-
             // Sync to UI panel if it exists
-            if (currentSelectedSector === secKey) {
-                const domEl = document.getElementById(`sec-stability`);
-                if (domEl) {
-                    domEl.innerText = `${sector.stability_index.toFixed(1)}%`;
-                    if (sector.stability_index < 50) {
-                        domEl.className = 'metric-value critical-text';
-                    } else if (sector.stability_index < 90) {
-                        domEl.className = 'metric-value warning-text';
-                    } else {
-                        domEl.className = 'metric-value nominal-text';
-                    }
-                }
-
-                const envEl = document.getElementById(`sec-env-stress`);
-                if (envEl) {
-                    envEl.innerText = sector.environmental_stress_score.toFixed(1);
-                    if (sector.environmental_stress_score > 10) envEl.className = 'metric-value warning-text';
-                    else envEl.className = 'metric-value nominal-text';
+            const domEl = document.getElementById(`sector-sec-${secKey.toLowerCase()}`);
+            if (domEl) {
+                domEl.innerText = `${sector.stability_index.toFixed(1)}%`;
+                if (sector.stability_index < 50) {
+                    domEl.className = 'metric-value critical-text';
+                } else if (sector.stability_index < 90) {
+                    domEl.className = 'metric-value warning-text';
+                } else {
+                    domEl.className = 'metric-value nominal-text';
                 }
             }
         }
@@ -1925,21 +1031,14 @@ function simulateAUVPhysicsTick() {
             powerDrawWatts += 2500; // Ballast pump energy
         }
         else if (auv.state === 'TRANSIT_HORIZONTAL') {
-            const sectorId = determineSector(auv.current_kp);
-            const env = digitalTwinDB.sectors[sectorId];
+            auv.velocity_horizontal = 4.5; // Cruise at 4.5 knots
+            const speedMs = auv.velocity_horizontal * 0.5144;
 
-            // AUV Physics inside water current
-            const thrustKnots = 4.5; // Engine thrust speed
-            const travelDir = Math.sign(auv.target_kp - auv.current_kp) || 1;
-
-            // Current alignment: if AUV travels in same direction as current, it helps. Else hinders.
-            const currentEffect = (travelDir === env.current_direction) ? 1 : -1;
-            const groundSpeedKnots = thrustKnots + (env.current_speed * currentEffect);
-            const groundSpeedMs = Math.max(0.1, groundSpeedKnots * 0.5144); // Ensure it makes *some* forward progress
-
+            // Move towards target KP (1 KP = 1 km roughly)
             const diff = auv.target_kp - auv.current_kp;
             const dir = Math.sign(diff);
-            const distToMoveKm = (groundSpeedMs * dtSim) / 1000;
+
+            const distToMoveKm = (speedMs * dtSim) / 1000;
 
             if (Math.abs(diff) < Math.abs(distToMoveKm)) {
                 auv.current_kp = auv.target_kp;
@@ -1962,32 +1061,13 @@ function simulateAUVPhysicsTick() {
                 auv.depth = getDepthKmAtKP(auv.current_kp);
             }
 
-            // Hydrodynamic Drag & Battery Drain Update
-            const density = 1025; // kg/m^3
-            const CdArea = 0.08; // drag coeff * front area (approx)
-            const thrustSpeedMs = thrustKnots * 0.5144;
-            // Drag Force = 0.5 * density * velocity^2 * Cd * Area
-            const dragForce = 0.5 * density * Math.pow(thrustSpeedMs, 2) * CdArea;
-            // Battery consumption must increase under strong contrary currents (engine works harder to maintain 4.5 thust, or we just model it as static thrust)
-            // Let's add an overhead if pushing against current
-            let currentPenalty = (currentEffect === -1) ? (env.current_speed * 1000) : 0;
-            const thrustPowerWatts = (dragForce * thrustSpeedMs) + currentPenalty;
-
-            powerDrawWatts += thrustPowerWatts;
+            // Hydrodynamic drag power simplified approximation
+            powerDrawWatts += (200 * speedMs * speedMs); // roughly 1kW at cruise
         }
         else if (auv.state === 'ON_SITE_SCAN') {
-            const sectorId = determineSector(auv.current_kp);
-            const env = digitalTwinDB.sectors[sectorId];
-
             auv.velocity_horizontal = 1.0; // Slow down to 1 knot
-
-            // Turbidity Effects
-            let turbidityPenalty = 1.0;
-            if (env.turbidity === 'Moderate') turbidityPenalty = 1.25;
-            if (env.turbidity === 'High') turbidityPenalty = 1.6;
-
-            auv.scan_timer += (dtSim / turbidityPenalty); // Slower progress in high turbidity
-            powerDrawWatts += (4000 * turbidityPenalty); // Harder pushing of sonar to pierce turbidity
+            auv.scan_timer += dtSim;
+            powerDrawWatts += 4000; // Active sonar/scanners
 
             if (auv.scan_timer > 300) { // 5 minutes scan
                 auv.state = 'REPORTING';
@@ -2313,42 +1393,6 @@ document.getElementById('nav-global').onclick = () => switchMode('GLOBAL');
 document.getElementById('nav-sector').onclick = () => switchMode('SECTOR');
 document.getElementById('nav-inspection').onclick = () => switchMode('INSPECTION');
 
-// Phase 12: Bind Time Simulation Controls
-document.querySelectorAll('.time-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-        document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-        simulationMultiplier = parseInt(e.target.dataset.mult) || 1;
-    });
-});
-
-document.querySelectorAll('.time-jump-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-        const hours = parseInt(e.target.dataset.jump) || 0;
-        const msToAdd = hours * 60 * 60 * 1000;
-        if (isSandboxMode) {
-            sandboxTimeMs += msToAdd;
-        } else {
-            simulationTimeMs += msToAdd;
-        }
-    });
-});
-
-const toggleSandbox = document.getElementById('toggle-sandbox');
-if (toggleSandbox) {
-    toggleSandbox.addEventListener('change', (e) => {
-        isSandboxMode = e.target.checked;
-        const banner = document.getElementById('sandbox-banner');
-        if (isSandboxMode) {
-            banner.classList.remove('hidden');
-            // Snapshot current sim time to sandbox time on entry
-            sandboxTimeMs = simulationTimeMs;
-        } else {
-            banner.classList.add('hidden');
-        }
-    });
-}
-
 // --------------------------------------------------------
 // 7. RENDER LOOP
 // --------------------------------------------------------
@@ -2360,183 +1404,16 @@ window.addEventListener('resize', () => {
 
 function animate() {
     requestAnimationFrame(animate);
-
-    // Phase 12: Time Engine Update
-    const nowMs = Date.now();
-    const dt = nowMs - lastRealTimeMs;
-    lastRealTimeMs = nowMs;
-
-    // Use regular dilation for moving AUVs, but phase 12 simulationMultiplier for predicting future days
-    // Dilation exists as visual speed up, simulationMultiplier is for days/weeks forecasting
-    const visualSpeed = parseFloat(document.getElementById('time-dilation').value) || 1000;
-
-    if (isSandboxMode) {
-        sandboxTimeMs += dt * simulationMultiplier;
-    } else {
-        simulationTimeMs += dt * simulationMultiplier;
-    }
-
-    const dtSim = dt * simulationMultiplier;
-    updatePredictiveEngine(dtSim);
-
-    const activeTimeMs = getSimTime();
-
-    // Update UI Clocks
-    const dateObj = new Date(activeTimeMs);
-    const timeString = dateObj.toISOString().split('T')[1].slice(0, 8);
-    // Rough days calculation (assuming start is near Date.now())
-    const startMs = Date.now(); // We just use Date.now() as a diff point for +days
-    const daysOffset = Math.floor(Math.max(0, activeTimeMs - startMs) / (1000 * 60 * 60 * 24));
-    const dayStr = daysOffset > 0 ? ` (+${daysOffset}d)` : '';
-
-    const topTimeEl = document.getElementById('top-time');
-    if (topTimeEl) topTimeEl.innerText = timeString + dayStr;
-    const simClockDisplay = document.getElementById('sim-clock-display');
-    if (simClockDisplay) simClockDisplay.innerText = timeString + dayStr;
-
     camera.lookAt(cameraTarget);
 
     updateLabels(); // Sync 2D HTML markers with 3D projection
-
-    // Animate Marine Snow around camera
-    marineSnow.position.copy(camera.position);
-    // Push it slightly forward so we see it
-    const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-    marineSnow.position.add(dir.multiplyScalar(20));
-
-    // Rotate slowly
-    marineSnow.rotation.y += 0.001;
-    marineSnow.rotation.x += 0.0005;
-
-    // Process temporary dust clouds
-    for (let i = activeDustClouds.length - 1; i >= 0; i--) {
-        const c = activeDustClouds[i];
-        c.age += 0.01;
-        c.mesh.material.opacity = Math.max(0, 0.8 - c.age);
-        c.mesh.position.y += 0.005; // slowly rise
-        if (c.age > 0.8) {
-            scene.remove(c.mesh);
-            c.mesh.geometry.dispose();
-            c.mesh.material.dispose();
-            activeDustClouds.splice(i, 1);
-        }
-    }
-
-    // Phase 10: Animate active AUV meshes
-    digitalTwinDB.active_auvs.forEach(auv => {
-        if (!auv.mesh) return;
-
-        // Remove mesh if docked
-        if (auv.state === 'IDLE') {
-            auv.mesh.visible = false;
-            return;
-        } else {
-            auv.mesh.visible = true;
-        }
-
-        // Interpolate position along master curve
-        const t = auv.current_kp / MAX_LENGTH;
-        const pt = masterCurve.getPoint(t);
-        const up = pt.clone().normalize();
-
-        // Real depth
-        const pos = latLonToVector3(0, 0, auv.depth);
-        // We override the exact curve pos with precise lat/lon computation based on interpolated coord to match seabed perfectly
-        const coord = interpolateCoord(t);
-        const truePos = latLonToVector3(coord.lat, coord.lon, auv.depth);
-        // Add tiny vertical offset
-        truePos.add(up.clone().multiplyScalar(0.005));
-
-        // Smoothed lerp for visual
-        if (auv.mesh.position.lengthSq() < 1) auv.mesh.position.copy(truePos); // init
-        auv.mesh.position.lerp(truePos, 0.1);
-
-        // Orient
-        const tangent = Math.sign(auv.velocity_horizontal || 1) * 1;
-        const tangV = masterCurve.getTangent(t).multiplyScalar(tangent);
-        // Look ahead
-        const targetLook = auv.mesh.position.clone().add(tangV);
-        auv.mesh.lookAt(targetLook);
-
-        // Orient 'UP' 
-        auv.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
-        // Re-apply lookat roughly (cross product math is cleaner but let's just cheat the tangent)
-
-        // Animate Propeller based on speed
-        if (auv.mesh.userData.propeller) {
-            auv.mesh.userData.propeller.rotation.x -= auv.velocity_horizontal * 2.0;
-        }
-
-        // Animate Sonar Ring during SCAN or REPAIR
-        if (auv.mesh.userData.sonarRing) {
-            const ring = auv.mesh.userData.sonarRing;
-            if (auv.state === 'ON_SITE_SCAN' || auv.state === 'ON_SITE_REPAIR') {
-                ring.scale.setLength(1.0 + (Date.now() % 2000) / 500); // Expanding scale 1 to 5
-                ring.material.opacity = Math.max(0, 1.0 - (Date.now() % 2000) / 2000);
-            } else {
-                ring.material.opacity = 0;
-            }
-        }
-    });
-
-    // Phase 13: Animate Hazard Overlays
-    for (const assetType in digitalTwinDB.assets) {
-        digitalTwinDB.assets[assetType].forEach(seg => {
-            if (seg.hazard_overlay) {
-                const speed = seg.hazard_escalated ? 10 : 3;
-                seg.hazard_overlay.material.opacity = 0.3 + (Math.sin(activeTimeMs * 0.001 * speed) * 0.3);
-            }
-        });
-    }
-
-    // Phase 10: Light Attenuation & Depth Physics
-    // Calculate current camera altitude above sea level (sea level is R_EARTH)
-    const altitude = camera.position.length() - R_EARTH;
-    let depthStr = 'Deep Basin';
-
-    // Lerp colors based on depth (negative altitude means underwater)
-    const shallowColor = new THREE.Color('#1f6fa8'); // 0m to -50m
-    const midColor = new THREE.Color('#0e3f63'); // -50m to -1000m
-    const deepColor = new THREE.Color('#061a2a'); // -1000m below
-
-    let targetColor = deepColor;
-    let fogDensity = 0.0015;
-
-    if (altitude > -0.05) { // 0 to -50m (0.05 km)
-        depthStr = 'Shallow';
-        targetColor = shallowColor;
-        fogDensity = 0.0002;
-    } else if (altitude > -1.0) { // -50m to -1000m
-        depthStr = 'Mid Slope';
-        // Lerp between shallow and mid
-        const t = (altitude + 0.05) / (-0.95);
-        targetColor = shallowColor.clone().lerp(midColor, t);
-        fogDensity = 0.0005 + (t * 0.0005);
-    } else { // Deep
-        const t = Math.min(1.0, (altitude + 1.0) / -2.0); // -1000m to -3000m
-        targetColor = midColor.clone().lerp(deepColor, t);
-        fogDensity = 0.0010 + (t * 0.0005);
-    }
-
-    // Update shader times for wave and caustics
-    const timeSec = Date.now() * 0.001;
-    if (waterMat.userData.shader) {
-        waterMat.userData.shader.uniforms.uTime.value = timeSec;
-    }
-    if (seabedMat.userData.shader) {
-        seabedMat.userData.shader.uniforms.uTime.value = timeSec;
-    }
-
-    scene.background.lerp(targetColor, 0.1);
-    scene.fog.color.copy(scene.background);
-    scene.fog.density += (fogDensity - scene.fog.density) * 0.05;
 
     renderer.render(scene, camera);
 }
 animate();
 
 // --------------------------------------------------------
-// 8. PHASE 7 & 10: MASTER DASHBOARD & UI INTERFACE
+// 8. PHASE 7: MASTER DASHBOARD METRICS LOGIC
 // --------------------------------------------------------
 let sysConfidence = 99.9;
 
@@ -2619,27 +1496,6 @@ function updateSectorControl() {
     document.getElementById('sec-depth-range').innerText = sectorStats[currentSelectedSector].depth;
     document.getElementById('sec-station-id').innerText = sectorStats[currentSelectedSector].stationId;
 
-    // Environmental sync
-    const env = digitalTwinDB.sectors[currentSelectedSector];
-    if (env) {
-        document.getElementById('sec-stability').innerText = `${env.stability_index.toFixed(1)}%`;
-
-        const envEl = document.getElementById('sec-env-stress');
-        if (envEl) {
-            envEl.innerText = env.environmental_stress_score.toFixed(1);
-            if (env.environmental_stress_score > 10) envEl.className = 'metric-value warning-text';
-            else envEl.className = 'metric-value nominal-text';
-        }
-
-        const turbEl = document.getElementById('sec-turbidity');
-        if (turbEl) {
-            turbEl.innerText = env.turbidity.toUpperCase();
-            if (env.turbidity === 'High') turbEl.className = 'metric-value critical-text';
-            else if (env.turbidity === 'Moderate') turbEl.className = 'metric-value warning-text';
-            else turbEl.className = 'metric-value nominal-text';
-        }
-    }
-
     // Filter active AUVs in sector
     const auvList = document.getElementById('sec-auv-list');
     auvList.innerHTML = '';
@@ -2701,113 +1557,22 @@ function updateBioAlgae() {
 
 setInterval(updateDashboardMetrics, 500);
 
-// --------------------------------------------------------
-// UI REFACTOR: Accordions, Tooltips & Contextual Panel
-// --------------------------------------------------------
-
-// Contextual Update
-function updateContextualPanel(title, htmlContent) {
-    const rp = document.getElementById('right-panel');
-    const hdr = document.getElementById('right-panel-header');
-    const content = document.getElementById('right-panel-content');
-
-    hdr.innerText = title;
-    content.innerHTML = htmlContent;
-    rp.classList.add('visible');
-}
-
-// Accordion Logic
-document.querySelectorAll('.accordion-item').forEach(item => {
-    item.addEventListener('click', () => {
-        // If clicking already active, do nothing
-        if (item.classList.contains('active')) return;
-
-        // Close others
-        document.querySelectorAll('.accordion-item').forEach(el => el.classList.remove('active'));
-        document.querySelectorAll('.accordion-content').forEach(el => el.classList.remove('open'));
-
-        // Open this
-        item.classList.add('active');
-        const targetId = item.getAttribute('data-panel');
-        if (targetId) {
-            document.getElementById(targetId).classList.add('open');
-        }
-    });
-});
-// Init first accordion open
-const firstAccordion = document.querySelector('.accordion-item');
-if (firstAccordion) firstAccordion.click();
-
-// Tooltip Logic
-const univTooltip = document.getElementById('universal-tooltip');
-const tooltipTitle = document.getElementById('tt-title');
-const tooltipLine1 = document.getElementById('tt-line1');
-const tooltipLine2 = document.getElementById('tt-line2');
-const tooltipLine3 = document.getElementById('tt-line3');
-let tooltipTimeout;
-
-document.addEventListener('mouseover', (e) => {
-    const target = e.target.closest('.neptune-tooltip');
-    if (target) {
-        tooltipTimeout = setTimeout(() => {
-            const title = target.getAttribute('data-tooltip') || '';
-            const descStr = target.getAttribute('data-tooltip-desc') || '';
-            const shortDesc = target.getAttribute('data-tooltip-short') || descStr; // Fallback to old format just in case
-            const techPurpose = target.getAttribute('data-tooltip-tech') || '';
-            const whenUse = target.getAttribute('data-tooltip-use') || '';
-
-            tooltipTitle.innerText = title;
-            tooltipLine1.innerText = shortDesc;
-            tooltipLine2.innerText = techPurpose;
-            tooltipLine3.innerText = whenUse;
-
-            const rect = target.getBoundingClientRect();
-            univTooltip.classList.remove('hidden');
-
-            // Adjust position
-            let x = rect.left + rect.width + 10;
-            let y = rect.top;
-            if (x + 250 > window.innerWidth) { // 250 is max width
-                x = rect.left - 260; // Left side if right overflows
-            }
-            if (x < 0) x = window.innerWidth / 2; // Emergency centering
-
-            univTooltip.style.left = `${x}px`;
-            univTooltip.style.top = `${y}px`;
-        }, 300); // 300ms delay inside constraint
-    }
-});
-document.addEventListener('mouseout', (e) => {
-    const target = e.target.closest('.neptune-tooltip');
-    if (target) {
-        clearTimeout(tooltipTimeout);
-        univTooltip.classList.add('hidden');
-    }
-});
-
-// Bottom Action Bar Logic (Mode Switches)
-document.getElementById('nav-global').addEventListener('click', (e) => {
-    document.querySelectorAll('.ribbon-btn').forEach(b => b.classList.remove('active-nav'));
-    e.currentTarget.classList.add('active-nav');
-    currentSelectedSector = null;
-    updateContextualPanel('GLOBAL OVERVIEW', `<div class="instruction-text">Viewing entire 1900km corridor. Select a sector from left dock or 3D view for details.</div>`);
-});
-document.getElementById('nav-sector').addEventListener('click', (e) => {
-    document.querySelectorAll('.ribbon-btn').forEach(b => b.classList.remove('active-nav'));
-    e.currentTarget.classList.add('active-nav');
+// Hook sector nav clicks
+document.getElementById('nav-sector').addEventListener('click', () => {
     currentSelectedSector = 'B';
-    updateContextualPanel('SECTOR FOCUS - B', `<div class="instruction-text">Sector B focused. Review telemetry in Control Dock.</div>`);
+    document.getElementById('sector-control-panel').classList.remove('hidden');
 });
-document.getElementById('nav-inspection').addEventListener('click', (e) => {
-    document.querySelectorAll('.ribbon-btn').forEach(b => b.classList.remove('active-nav'));
-    e.currentTarget.classList.add('active-nav');
-    currentSelectedSector = 'B'; // Or dynamically picked
-    updateContextualPanel('SEABED INSPECTION', `<div class="instruction-text">Inspection mode activated. Zooming to seabed floor resolving at 10cm.</div>`);
+document.getElementById('nav-global').addEventListener('click', () => {
+    currentSelectedSector = null;
+    document.getElementById('sector-control-panel').classList.add('hidden');
 });
-document.getElementById('btn-emergency-stop').addEventListener('click', () => {
-    document.getElementById('human-approval-modal').classList.remove('hidden');
-    document.getElementById('approval-details').innerHTML = `<span class="critical-text">MANUAL E-STOP TRIGGERED</span><br><br>Confirm full sector lockdown and halt of all autonomous systems?`;
-    updateContextualPanel('EMERGENCY', `<div class="warning-text">E-STOP TRIGGERED. AWAITING CONFIRMATION.</div>`);
+document.getElementById('nav-inspection').addEventListener('click', () => {
+    currentSelectedSector = 'B';
+    document.getElementById('sector-control-panel').classList.remove('hidden');
+});
+
+document.getElementById('btn-close-sector').addEventListener('click', () => {
+    document.getElementById('sector-control-panel').classList.add('hidden');
 });
 
 // Hook abort button
